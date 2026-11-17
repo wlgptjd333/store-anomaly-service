@@ -1,0 +1,8 @@
+{
+  "project_name": "unmanned_store_anomaly",
+  "pose_model": "yolo11n-pose.pt",
+  "image_size": 640,
+  "person_confidence": 0.25,
+  "keypoint_confidence": 0.50,
+  "device": "auto"
+}

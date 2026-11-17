@@ -1,0 +1,30 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# 촬영 원본·실명 대응표 (얼굴·이름이 나옴 → Git 에 올리지 않음)
+data/
+
+# Images and videos (검수 그림·Skeleton 영상에도 얼굴이 나옴)
+*.jpg
+*.jpeg
+*.png
+*.mp4
+*.mov
+*.avi
+
+# Models
+*.pt
+*.pth
+*.onnx
+
+# 자동 생성 Frame별 CSV
+reports/sequences/
+reports/videos/
+reports/review/
+
+# OS
+.DS_Store
+Thumbs.db

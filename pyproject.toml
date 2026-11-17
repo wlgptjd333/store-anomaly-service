@@ -1,0 +1,22 @@
+[project]
+name = "unmanned-store-anomaly"
+version = "0.1.0"
+description = "Unmanned store abnormal action recognition from 2D pose (team 3)"
+requires-python = ">=3.11"
+dependencies = [
+    "ultralytics",
+    "opencv-python",
+    "numpy",
+    "pandas",
+    "scikit-learn",
+    "joblib",
+    "matplotlib",
+    "torch",
+    "tqdm",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "ruff",
+]
