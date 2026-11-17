@@ -66,6 +66,14 @@ SUBJECT_OVERRIDES = {
 }
 
 
+# 라벨 검수(2026-11-17)에서 확인한 실제 촬영 모습 — 이름과 다른 동작만 적음
+FILMED_AS = {
+    "A08": "책상 모서리에 올라가 걸터앉아 휴대폰 보기 (의자 대신 책상, 뛰어오르지 않음)",
+    "A15": "벽에 잠깐 기댔다가 바닥에 무릎 꿇고 손 짚어 엎드려 웅크리기",
+    "A16": "쪼그려 앉았다가 천천히 뒤로 눕기 (실제 기절보다 느림)",
+}
+
+
 def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--source", default=DEFAULT_SOURCE, help="사람별 폴더가 있는 원본 영상 폴더")
@@ -164,8 +172,8 @@ def main() -> None:
     cfg = ROOT / "configs"
     with (cfg / "action_classes.csv").open("w", newline="", encoding="utf-8-sig") as f:
         w = csv.writer(f)
-        w.writerow(["action_id", "action_label", "name_ko", "category"])
-        w.writerows(ACTIONS)
+        w.writerow(["action_id", "action_label", "name_ko", "category", "filmed_as"])
+        w.writerows([(*a, FILMED_AS.get(a[0], "")) for a in ACTIONS])
     public = ["clip_id", "subject_id", "action_id", "action_label", "take_id", "view",
               "video_file", "source_type", "review_status", "note"]
     with (cfg / "clip_manifest.csv").open("w", newline="", encoding="utf-8-sig") as f:
