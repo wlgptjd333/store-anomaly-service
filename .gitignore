@@ -24,6 +24,7 @@ data/
 reports/sequences/
 reports/videos/
 reports/review/
+reports/dataset/
 
 # OS
 .DS_Store

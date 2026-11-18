@@ -1,0 +1,5 @@
+﻿experiment,trained_on,test_accuracy,test_macro_f1
+body40_seg,train S01~S03,0.7059,0.6852
+body40_seg,train S01~S04,0.6471,0.6356
+course38_whole,train S01~S03,0.5588,0.5259
+course38_whole,train S01~S04,0.5882,0.549

@@ -1,0 +1,27 @@
+{
+  "description": "수업 6일차 Action Recognition Baseline 기준값. 13·14번 스크립트가 이 값을 읽는다.",
+  "sequence_steps": 30,
+  "min_valid_frames": 10,
+  "min_valid_ratio": 0.5,
+  "windows": {
+    "segment": "06번이 추정한 동작 구간 (seg_start ~ seg_end, approved_clip_manifest.csv)",
+    "whole": "영상 전체 (수업 방식)"
+  },
+  "feature_sets": {
+    "course38": "수업 38-D: 어깨 폭 정규화 17관절 x,y (34) + 팔꿈치·무릎 각도 4",
+    "course34": "수업 38-D 에서 각도 4개 제외",
+    "body40": "3팀: 몸 크기 정규화 17관절 x,y (34) + 각도 4 + 골반 화면 위치 2",
+    "body38": "3팀 body40 에서 골반 화면 위치 2개 제외",
+    "body36": "3팀 body40 에서 각도 4개 제외"
+  },
+  "main_feature_set": "body40",
+  "main_window": "segment",
+  "model": {
+    "type": "RandomForestClassifier",
+    "n_estimators": 300,
+    "max_depth": null,
+    "random_state": 42,
+    "class_weight": "balanced"
+  },
+  "selection_rule": "Validation(S04) 과 S01~S04 사람 단위 4-fold 로만 고르고, Test(S05)는 마지막에 한 번만 본다"
+}

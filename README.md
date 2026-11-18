@@ -8,7 +8,7 @@ Vision AI 과정 3팀 프로젝트 (2D 자세추정 수업에서 시작).
 - 목표: 기물 파손·폭력·배회·절도 의심·응급(쓰러짐) 동작을 Sequence 로 구분
 
 왜 이렇게 만들었는지(원본을 그대로 둔 이유, YOLO 를 고른 이유, 정규화·라벨·구간·개인정보 결정)는 [기술 결정 기록](docs/DESIGN_DECISIONS.md)에 숫자와 함께 적었습니다.
-정규화 방식 비교(수업의 이미지 기준 vs 몸 기준)는 [정규화 비교 분석](docs/NORMALIZATION_ANALYSIS.md), 전체 문서 목록은 [docs/README.md](docs/README.md).
+정규화 방식 비교(수업의 이미지 기준 vs 몸 기준)는 [정규화 비교 분석](docs/NORMALIZATION_ANALYSIS.md), 동작 분류 Baseline(수업 6일차 방식 vs 3팀 방식)은 [Baseline 성능평가](docs/BASELINE_EVALUATION.md), 전체 문서 목록은 [docs/README.md](docs/README.md).
 
 ## 동작 17개
 
@@ -82,6 +82,8 @@ Sequence CSV (clip 하나 = 파일 하나, 159열)
 | `scripts/10_build_approved_manifest.py` | Human QA PASS 만 → `configs/approved_clip_manifest.csv` (동작 구간 포함) |
 | `scripts/11_build_subject_split.py` | 사람 단위 Train / Validation / Test + Leakage 검사 → `reports/splits/` (LOSO 5-fold 포함) |
 | `scripts/12_compare_normalizations.py` | 정규화 5가지 비교 (서 있는 자세 크기 차이, 측면 튐, 사람 단위 5-fold 분류) |
+| `scripts/13_build_sequence_dataset.py` | 입력 점검 + 동작 구간을 30단계로 보간한 고정 길이 Dataset → `reports/dataset/` |
+| `scripts/14_train_baseline.py` | Random Forest 실험 9개 (한 번에 하나씩 바꿈), 혼동 행렬, 틀린 영상, 마지막 Test S05 |
 | `scripts/08_draw_skeleton_figure.py` | 동작별 뼈대 그림 (영상·얼굴 없이) → `docs/images/actions_skeleton.png` |
 | `scripts/video_hub.py` | 같은 와이파이에서 팀원 핸드폰 영상을 모으는 업로드 서버 (표준 라이브러리만) |
 | `src/feature_utils.py` | 관절각도, 어깨 폭 정규화 (교과10 수업 코드) |
@@ -97,13 +99,25 @@ Sequence CSV (clip 하나 = 파일 하나, 159열)
   (값이 어깨 폭 5배 넘게 튀는 측면 Frame: 54.6% → 0.01% 미만)
 - 라벨 검수 (2026-11-17, S05 는 11-18): 동작별 그림 17장으로 170개 모두 확인 → **라벨 오류 0, 170개 OK**
   - S05 의 A15 는 엎드리지 않고 벽 옆에 주저앉음 (같은 동작의 다른 모습으로 그대로 사용)
+  - 자동 경고 3개는 모두 YOLO 검출 문제 (누운 자세 미검출 1, 1명을 2명으로 검출 2)
+  - S01 은 A11·A12·A13·A17 에서 겉옷을 벗었을 뿐 같은 사람
+  - S02 의 A13(테이블 내려치기)은 동작이 약하지만 "약한 예시"로 그대로 사용
 - 동작별 중요 관절 QA (수업 5일차 기준, 동작 구간 안): AUTO_PASS 164 · CHECK 6
   → CHECK 는 모두 YOLO 가 가장자리 물체를 사람으로 잡거나 멀리서 몇 Frame 놓친 것 → **Human QA PASS 170**
 - Split: Train S01~S03 (102) · Validation S04 (34) · Test S05 (34), Leakage 검사 통과
 - 정규화 비교: 다른 날 촬영한 S05 시험에서 이미지 기준 38.2% vs 몸 크기 + 화면 위치 67.6% → 학습 Feature 는 몸 기준으로
-  - 자동 경고 3개는 모두 YOLO 검출 문제 (누운 자세 미검출 1, 1명을 2명으로 검출 2)
-  - S01 은 A11·A12·A13·A17 에서 겉옷을 벗었을 뿐 같은 사람
-  - S02 의 A13(테이블 내려치기)은 동작이 약하지만 "약한 예시"로 그대로 사용
+- **동작 분류 Baseline (수업 6일차, Random Forest, 17개 동작):**
+
+  | 모델 | Validation S04 | Test S05 (다른 날 촬영) |
+  |---|---:|---:|
+  | 수업 그대로 (어깨 폭 38-D, 영상 전체) | 67.6% | 55.9% |
+  | **3팀** (몸 크기 정규화 + 각도 + 골반 위치, 동작 구간 30단계) | **76.5%** | **70.6%** |
+
+  - 가장 큰 차이는 시간 흐름: 가운데 Frame 1개(Static) 57% vs 30단계 Sequence 74% (S01~S04 4-fold)
+  - 각도·골반 위치·구간 자르기는 Random Forest 난수 변동(±4%p) 안 → 효과 있다고 쓰지 않음
+  - 틀린 영상 추적: 서서 하는 팔 동작끼리 혼동, 다른 날 측면 영상이 몸통 박치기로 쏠림, S05 의 A15 는 촬영 방식 차이
+
+![혼동 행렬](docs/images/baseline_confusion.png)
 
 ## 실행
 
@@ -119,6 +133,9 @@ python scripts/03_build_sequences.py --clip T03_S04_A01_T01_F --save-video
 python scripts/03_build_sequences.py --all
 python scripts/05_summarize_sequences.py
 python scripts/04_make_review_sheets.py
+# 6일차 Baseline (승인 목록 configs/approved_clip_manifest.csv 기준, YOLO 다시 안 돌림)
+python scripts/13_build_sequence_dataset.py
+python scripts/14_train_baseline.py
 ```
 
 `yolo11n-pose.pt` 는 첫 실행 때 Ultralytics 가 자동으로 받습니다.
@@ -128,7 +145,10 @@ python scripts/04_make_review_sheets.py
 - [x] 라벨 사람 검수 (`review_checklist.csv` 의 `review_result`)
 - [x] 동작 시작·끝 구간 자동 추정 (`segments_auto.csv`) — 사람 확인 남음
 - [x] 동작별 관절 QA → Human QA (PASS 170) → Approved Manifest → 사람 단위 Split·Leakage 검사
-- [ ] Sequence 를 고정 길이로 맞추고 동작 분류 모델 학습
+- [x] Sequence 를 고정 길이(30단계)로 맞추고 Random Forest Baseline 학습·오류 분석·Test
+- [ ] 시간 순서 모델 (1D-CNN / GRU) 을 같은 Split 으로 비교
+- [ ] VICON 3D 동작을 여러 각도로 2D 투영해 학습 데이터 늘리기 (동작 번호 대응 확인부터)
+- [ ] 동작 구간 끝 사람 확인 (누운 동작)
 
 ## 출처
 

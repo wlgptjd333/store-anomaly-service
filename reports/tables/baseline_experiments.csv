@@ -1,0 +1,10 @@
+﻿experiment,feature_set,window,mode,description,n_features,val_accuracy,val_macro_f1,val_accuracy_5seed_mean,val_accuracy_5seed_std,val_mean_conf_correct,val_mean_conf_wrong,dev4fold_accuracy_mean,dev4fold_accuracy_std,dev4fold_macro_f1_mean,dev4fold_by_subject
+course38_whole,course38,whole,sequence,"수업 그대로 (어깨 폭 38-D, 영상 전체)",1140,0.6765,0.6647,0.6765,0.0,0.344,0.188,0.6912,0.0488,0.674,S01:0.735 S02:0.735 S03:0.618 S04:0.676
+course38_seg,course38,segment,sequence,수업 38-D + 동작 구간,1140,0.6471,0.6118,0.6882,0.0144,0.401,0.244,0.6691,0.0244,0.6349,S01:0.706 S02:0.647 S03:0.676 S04:0.647
+course34_seg,course34,segment,sequence,수업 38-D 에서 각도 4개 제외,1020,0.7353,0.6787,0.7059,0.0263,0.384,0.261,0.6838,0.0382,0.6479,S01:0.647 S02:0.706 S03:0.647 S04:0.735
+course38_static,course38,segment,static,"수업 38-D, 가운데 Frame 1개",38,0.5294,0.4574,0.5941,0.039,0.442,0.31,0.5735,0.0488,0.5424,S01:0.647 S02:0.529 S03:0.588 S04:0.529
+body40_seg,body40,segment,sequence,"3팀 기준 (몸 크기 + 각도 + 골반 위치, 동작 구간)",1200,0.7647,0.749,0.7941,0.0,0.386,0.257,0.7426,0.0382,0.7243,S01:0.794 S02:0.706 S03:0.706 S04:0.765
+body40_whole,body40,whole,sequence,기준에서 창만 영상 전체,1200,0.7353,0.7451,0.7765,0.0235,0.387,0.221,0.7721,0.0761,0.7603,S01:0.882 S02:0.676 S03:0.794 S04:0.735
+body40_static,body40,segment,static,기준에서 가운데 Frame 1개,40,0.5882,0.5333,0.5529,0.022,0.437,0.314,0.5735,0.0441,0.535,S01:0.618 S02:0.588 S03:0.500 S04:0.588
+body38_seg,body38,segment,sequence,기준에서 골반 화면 위치 2개 제외,1140,0.7941,0.749,0.7471,0.0353,0.391,0.223,0.7279,0.067,0.7029,S01:0.794 S02:0.676 S03:0.647 S04:0.794
+body36_seg,body36,segment,sequence,기준에서 각도 4개 제외,1080,0.7647,0.751,0.7941,0.0263,0.397,0.245,0.75,0.0488,0.7319,S01:0.824 S02:0.706 S03:0.706 S04:0.765
