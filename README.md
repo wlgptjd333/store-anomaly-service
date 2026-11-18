@@ -7,6 +7,8 @@ Vision AI 과정 3팀 프로젝트 (2D 자세추정 수업에서 시작).
 - 방법: YOLO Pose → COCO 17 Keypoint → 정규화 Feature → Frame 을 시간 순서로 묶은 Sequence
 - 목표: 기물 파손·폭력·배회·절도 의심·응급(쓰러짐) 동작을 Sequence 로 구분
 
+왜 이렇게 만들었는지(원본을 그대로 둔 이유, YOLO 를 고른 이유, 정규화·라벨·구간·개인정보 결정)는 [기술 결정 기록](docs/DESIGN_DECISIONS.md)에 숫자와 함께 적었습니다.
+
 ## 동작 17개
 
 | ID | 동작 | 분류 |
