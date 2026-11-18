@@ -28,3 +28,4 @@ reports/review/
 # OS
 .DS_Store
 Thumbs.db
+reports/segments/
