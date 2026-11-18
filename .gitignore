@@ -29,3 +29,4 @@ reports/review/
 .DS_Store
 Thumbs.db
 reports/segments/
+!docs/images/*.png

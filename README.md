@@ -29,6 +29,10 @@ Vision AI 과정 3팀 프로젝트 (2D 자세추정 수업에서 시작).
 | A16 | 뒤로 기절하기 | 응급 |
 | A17 | 걸려 넘어지기 (앞으로) | 응급 |
 
+![동작 17개 뼈대](docs/images/actions_skeleton.png)
+
+얼굴이 나오지 않게 원본 영상 없이 관절 뼈대만 그렸습니다 (`scripts/08_draw_skeleton_figure.py`).
+
 정의 원본: [`configs/action_classes.csv`](configs/action_classes.csv)
 
 라벨 검수에서 이름과 실제 촬영 모습이 다른 동작은 `filmed_as` 열에 적었습니다.
@@ -69,6 +73,8 @@ Sequence CSV (clip 하나 = 파일 하나, 159열)
 | `scripts/03_build_sequences.py` | Frame별 Feature → `reports/sequences/<clip_id>_sequence.csv` (`--clip`, `--all`, `--save-video`) |
 | `scripts/04_make_review_sheets.py` | 라벨 검수 그림 → `reports/review/`, 점검표 → `reports/tables/review_checklist.csv` |
 | `scripts/05_summarize_sequences.py` | 영상별 QA → `reports/tables/sequence_qa.csv` |
+| `scripts/06_estimate_segments.py` | 동작 시작·끝 자동 추정 → `reports/tables/segments_auto.csv` (누움·앉음 동작은 일어나기 직전까지, `--sheets` 로 확인 그림) |
+| `scripts/08_draw_skeleton_figure.py` | 동작별 뼈대 그림 (영상·얼굴 없이) → `docs/images/actions_skeleton.png` |
 | `scripts/video_hub.py` | 같은 와이파이에서 팀원 핸드폰 영상을 모으는 업로드 서버 (표준 라이브러리만) |
 | `src/feature_utils.py` | 관절각도, 어깨 폭 정규화 (교과10 수업 코드) |
 | `src/team_feature_utils.py` | 3팀 Feature, 몸 크기 정규화 |
@@ -107,7 +113,7 @@ python scripts/04_make_review_sheets.py
 ## 다음 할 일
 
 - [x] 라벨 사람 검수 (`review_checklist.csv` 의 `review_result`)
-- [ ] 동작 시작·끝 구간 표시
+- [x] 동작 시작·끝 구간 자동 추정 (`segments_auto.csv`) — 사람 확인 남음
 - [ ] Sequence 를 고정 길이로 맞추고 동작 분류 모델 학습
 
 ## 출처
