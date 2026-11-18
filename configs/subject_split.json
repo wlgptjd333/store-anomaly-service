@@ -1,0 +1,13 @@
+{
+  "description": "사람 단위 Split. 같은 사람은 한 세트에만 들어간다 (docs/DESIGN_DECISIONS.md 9번).",
+  "main": {
+    "train": ["S01", "S02", "S03"],
+    "validation": ["S04"],
+    "test": ["S05"]
+  },
+  "reason": {
+    "test_S05": "S05 는 다른 날(11/16) 혼자 따로 찍어 옷·조명·촬영 위치가 가장 다르다 → 처음 보는 사람·상황에 대한 가장 엄격한 시험",
+    "validation_S04": "S04 는 본 촬영일 영상 중 하나를 학습에서 빼서 모델·문턱값 고르는 데만 쓴다"
+  },
+  "leave_one_subject_out": true
+}

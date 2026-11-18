@@ -1,0 +1,35 @@
+﻿clip_id,subject_id,action_id,action_label,take_id,view,sequence_file,seg_start,seg_end,human_note,split
+T03_S04_A01_T01_F,S04,A01,kiosk_slam,T01,F,reports/sequences/T03_S04_A01_T01_F_sequence.csv,0.73,4.21,자동 QA 통과 (2026-11-18 검토),validation
+T03_S04_A01_T01_S,S04,A01,kiosk_slam,T01,S,reports/sequences/T03_S04_A01_T01_S_sequence.csv,1.07,4.71,자동 QA 통과 (2026-11-18 검토),validation
+T03_S04_A02_T01_F,S04,A02,one_arm_throw,T01,F,reports/sequences/T03_S04_A02_T01_F_sequence.csv,1.15,2.77,자동 QA 통과 (2026-11-18 검토),validation
+T03_S04_A02_T01_S,S04,A02,one_arm_throw,T01,S,reports/sequences/T03_S04_A02_T01_S_sequence.csv,0.45,2.47,자동 QA 통과 (2026-11-18 검토),validation
+T03_S04_A03_T01_F,S04,A03,freezer_front_kick,T01,F,reports/sequences/T03_S04_A03_T01_F_sequence.csv,1.1,2.58,자동 QA 통과 (2026-11-18 검토),validation
+T03_S04_A03_T01_S,S04,A03,freezer_front_kick,T01,S,reports/sequences/T03_S04_A03_T01_S_sequence.csv,0.55,2.25,자동 QA 통과 (2026-11-18 검토),validation
+T03_S04_A04_T01_F,S04,A04,claw_machine_shake,T01,F,reports/sequences/T03_S04_A04_T01_F_sequence.csv,0.47,4.43,자동 QA 통과 (2026-11-18 검토),validation
+T03_S04_A04_T01_S,S04,A04,claw_machine_shake,T01,S,reports/sequences/T03_S04_A04_T01_S_sequence.csv,0.42,4.01,자동 QA 통과 (2026-11-18 검토),validation
+T03_S04_A05_T01_F,S04,A05,two_hand_shove,T01,F,reports/sequences/T03_S04_A05_T01_F_sequence.csv,0.2,2.55,자동 QA 통과 (2026-11-18 검토),validation
+T03_S04_A05_T01_S,S04,A05,two_hand_shove,T01,S,reports/sequences/T03_S04_A05_T01_S_sequence.csv,0.43,2.43,자동 QA 통과 (2026-11-18 검토),validation
+T03_S04_A06_T01_F,S04,A06,two_hand_weapon_swing,T01,F,reports/sequences/T03_S04_A06_T01_F_sequence.csv,0.67,3.48,자동 QA 통과 (2026-11-18 검토),validation
+T03_S04_A06_T01_S,S04,A06,two_hand_weapon_swing,T01,S,reports/sequences/T03_S04_A06_T01_S_sequence.csv,0.45,3.27,자동 QA 통과 (2026-11-18 검토),validation
+T03_S04_A07_T01_F,S04,A07,sit_on_floor_mat,T01,F,reports/sequences/T03_S04_A07_T01_F_sequence.csv,1.08,8.98,자동 QA 통과 (2026-11-18 검토),validation
+T03_S04_A07_T01_S,S04,A07,sit_on_floor_mat,T01,S,reports/sequences/T03_S04_A07_T01_S_sequence.csv,0.52,6.86,자동 QA 통과 (2026-11-18 검토),validation
+T03_S04_A08_T01_F,S04,A08,jump_onto_chair_phone,T01,F,reports/sequences/T03_S04_A08_T01_F_sequence.csv,0.68,6.65,자동 QA 통과 (2026-11-18 검토),validation
+T03_S04_A08_T01_S,S04,A08,jump_onto_chair_phone,T01,S,reports/sequences/T03_S04_A08_T01_S_sequence.csv,0.93,6.3,자동 QA 통과 (2026-11-18 검토),validation
+T03_S04_A09_T01_F,S04,A09,lie_prone_phone,T01,F,reports/sequences/T03_S04_A09_T01_F_sequence.csv,0.92,6.53,자동 QA 통과 (2026-11-18 검토),validation
+T03_S04_A09_T01_S,S04,A09,lie_prone_phone,T01,S,reports/sequences/T03_S04_A09_T01_S_sequence.csv,0.3,6.42,자동 QA 통과 (2026-11-18 검토),validation
+T03_S04_A10_T01_F,S04,A10,lie_supine_roll_side,T01,F,reports/sequences/T03_S04_A10_T01_F_sequence.csv,0.97,13.05,자동 QA 통과 (2026-11-18 검토),validation
+T03_S04_A10_T01_S,S04,A10,lie_supine_roll_side,T01,S,reports/sequences/T03_S04_A10_T01_S_sequence.csv,0.77,10.1,자동 QA 통과 (2026-11-18 검토),validation
+T03_S04_A11_T01_F,S04,A11,body_check,T01,F,reports/sequences/T03_S04_A11_T01_F_sequence.csv,0.47,3.38,자동 QA 통과 (2026-11-18 검토),validation
+T03_S04_A11_T01_S,S04,A11,body_check,T01,S,reports/sequences/T03_S04_A11_T01_S_sequence.csv,0.97,3.93,자동 QA 통과 (2026-11-18 검토),validation
+T03_S04_A12_T01_F,S04,A12,kneel_grab_prize,T01,F,reports/sequences/T03_S04_A12_T01_F_sequence.csv,0.68,8.06,자동 QA 통과 (2026-11-18 검토),validation
+T03_S04_A12_T01_S,S04,A12,kneel_grab_prize,T01,S,reports/sequences/T03_S04_A12_T01_S_sequence.csv,0.8,9.35,자동 QA 통과 (2026-11-18 검토),validation
+T03_S04_A13_T01_F,S04,A13,table_slam,T01,F,reports/sequences/T03_S04_A13_T01_F_sequence.csv,0.67,2.81,자동 QA 통과 (2026-11-18 검토),validation
+T03_S04_A13_T01_S,S04,A13,table_slam,T01,S,reports/sequences/T03_S04_A13_T01_S_sequence.csv,0.53,3.52,자동 QA 통과 (2026-11-18 검토),validation
+T03_S04_A14_T01_F,S04,A14,repeated_vomiting,T01,F,reports/sequences/T03_S04_A14_T01_F_sequence.csv,1.08,4.58,자동 QA 통과 (2026-11-18 검토),validation
+T03_S04_A14_T01_S,S04,A14,repeated_vomiting,T01,S,reports/sequences/T03_S04_A14_T01_S_sequence.csv,0.32,4.32,자동 QA 통과 (2026-11-18 검토),validation
+T03_S04_A15_T01_F,S04,A15,sleep_against_wall,T01,F,reports/sequences/T03_S04_A15_T01_F_sequence.csv,3.09,9.14,자동 QA 통과 (2026-11-18 검토),validation
+T03_S04_A15_T01_S,S04,A15,sleep_against_wall,T01,S,reports/sequences/T03_S04_A15_T01_S_sequence.csv,3.17,7.73,자동 QA 통과 (2026-11-18 검토),validation
+T03_S04_A16_T01_F,S04,A16,faint_backward,T01,F,reports/sequences/T03_S04_A16_T01_F_sequence.csv,1.9,8.18,자동 QA 통과 (2026-11-18 검토),validation
+T03_S04_A16_T01_S,S04,A16,faint_backward,T01,S,reports/sequences/T03_S04_A16_T01_S_sequence.csv,1.37,5.98,자동 QA 통과 (2026-11-18 검토),validation
+T03_S04_A17_T01_F,S04,A17,trip_fall_forward,T01,F,reports/sequences/T03_S04_A17_T01_F_sequence.csv,1.82,5.28,"멀리서 엎드린 순간 일부 Frame 놓침(구간 안 94% 검출), 사람·동작은 확인됨 (2026-11-18 검토)",validation
+T03_S04_A17_T01_S,S04,A17,trip_fall_forward,T01,S,reports/sequences/T03_S04_A17_T01_S_sequence.csv,1.25,4.65,"오른쪽 아래 모니터 쪽 물체를 YOLO 가 두 번째 사람으로 낮은 신뢰도(0.3)로 잡음, 학습 대상은 실제 사람(최고 신뢰도) 그대로 (2026-11-18 검토)",validation

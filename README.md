@@ -77,6 +77,9 @@ Sequence CSV (clip 하나 = 파일 하나, 159열)
 | `scripts/04_make_review_sheets.py` | 라벨 검수 그림 → `reports/review/`, 점검표 → `reports/tables/review_checklist.csv` |
 | `scripts/05_summarize_sequences.py` | 영상별 QA → `reports/tables/sequence_qa.csv` |
 | `scripts/06_estimate_segments.py` | 동작 시작·끝 자동 추정 → `reports/tables/segments_auto.csv` (누움·앉음 동작은 일어나기 직전까지, `--sheets` 로 확인 그림) |
+| `scripts/09_action_keypoint_qa.py` | 동작별 중요 관절 QA (수업 5일차 기준) → `action_keypoint_qa.csv`, 사람 판정표 `human_qa.csv` |
+| `scripts/10_build_approved_manifest.py` | Human QA PASS 만 → `configs/approved_clip_manifest.csv` (동작 구간 포함) |
+| `scripts/11_build_subject_split.py` | 사람 단위 Train / Validation / Test + Leakage 검사 → `reports/splits/` (LOSO 5-fold 포함) |
 | `scripts/08_draw_skeleton_figure.py` | 동작별 뼈대 그림 (영상·얼굴 없이) → `docs/images/actions_skeleton.png` |
 | `scripts/video_hub.py` | 같은 와이파이에서 팀원 핸드폰 영상을 모으는 업로드 서버 (표준 라이브러리만) |
 | `src/feature_utils.py` | 관절각도, 어깨 폭 정규화 (교과10 수업 코드) |
@@ -92,6 +95,9 @@ Sequence CSV (clip 하나 = 파일 하나, 159열)
   (값이 어깨 폭 5배 넘게 튀는 측면 Frame: 54.6% → 0.01% 미만)
 - 라벨 검수 (2026-11-17, S05 는 11-18): 동작별 그림 17장으로 170개 모두 확인 → **라벨 오류 0, 170개 OK**
   - S05 의 A15 는 엎드리지 않고 벽 옆에 주저앉음 (같은 동작의 다른 모습으로 그대로 사용)
+- 동작별 중요 관절 QA (수업 5일차 기준, 동작 구간 안): AUTO_PASS 164 · CHECK 6
+  → CHECK 는 모두 YOLO 가 가장자리 물체를 사람으로 잡거나 멀리서 몇 Frame 놓친 것 → **Human QA PASS 170**
+- Split: Train S01~S03 (102) · Validation S04 (34) · Test S05 (34), Leakage 검사 통과
   - 자동 경고 3개는 모두 YOLO 검출 문제 (누운 자세 미검출 1, 1명을 2명으로 검출 2)
   - S01 은 A11·A12·A13·A17 에서 겉옷을 벗었을 뿐 같은 사람
   - S02 의 A13(테이블 내려치기)은 동작이 약하지만 "약한 예시"로 그대로 사용
@@ -118,6 +124,7 @@ python scripts/04_make_review_sheets.py
 
 - [x] 라벨 사람 검수 (`review_checklist.csv` 의 `review_result`)
 - [x] 동작 시작·끝 구간 자동 추정 (`segments_auto.csv`) — 사람 확인 남음
+- [x] 동작별 관절 QA → Human QA (PASS 170) → Approved Manifest → 사람 단위 Split·Leakage 검사
 - [ ] Sequence 를 고정 길이로 맞추고 동작 분류 모델 학습
 
 ## 출처
