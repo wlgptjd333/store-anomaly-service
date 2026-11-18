@@ -59,6 +59,11 @@ ACTIONS = [
 ACTION_STARTS = ["151200", "151640", "152300", "152700", "153150", "153600", "153900", "154500",
                  "160500", "161330", "161900", "162250", "162630", "164200", "164700", "165030",
                  "165800"]
+MAIN_SHOOT_DATE = "20261113"
+
+# 따로 늦게 찍은 날: 한 사람이 A01 → A17 순서로 동작마다 2개(정면·측면)씩 연달아 찍음
+#   → 시간 순서 i 번째 영상 = ACTIONS[i // 2]. 영상 수가 정확히 34개가 아니면 멈춤.
+SEQUENTIAL_SHOOT_DATES = {"20261116"}
 
 # 폴더가 잘못된 파일 → 실제 촬영된 사람 (옷차림으로 확인)
 SUBJECT_OVERRIDES = {
@@ -82,21 +87,32 @@ def parse_args():
 
 
 def load_subjects(source: Path) -> dict[str, str]:
-    """이름 → S01.. (실명은 data/ 아래 Git 제외 파일에만 둠). 처음이면 폴더 이름 순서로 만듦."""
+    """이름 → S01.. (실명은 data/ 아래 Git 제외 파일에만 둠).
+    처음이면 폴더 이름 순서로 만들고, 나중에 생긴 사람 폴더는 다음 번호(S05..)로 뒤에 붙임
+    — 이미 붙은 번호는 바꾸지 않는다."""
     path = TEAM_DATA / "subjects.csv"
-    if not path.exists():
-        names = sorted(d.name for d in source.iterdir() if d.is_dir() and any(d.rglob("*.mp4")))
+    names = sorted(d.name for d in source.iterdir() if d.is_dir() and any(d.rglob("*.mp4")))
+    known: dict[str, str] = {}
+    if path.exists():
+        with path.open(encoding="utf-8-sig") as f:
+            known = {r["name"]: r["subject_id"] for r in csv.DictReader(f)}
+    new = [n for n in names if n not in known]
+    if new:
+        start = max((int(s[1:]) for s in known.values()), default=0) + 1
+        for i, n in enumerate(new):
+            known[n] = f"S{start + i:02d}"
+            print(f"새 사람 추가: {known[n]}")
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("w", newline="", encoding="utf-8-sig") as f:
             w = csv.writer(f)
             w.writerow(["subject_id", "name"])
-            for i, n in enumerate(names, 1):
-                w.writerow([f"S{i:02d}", n])
-    with path.open(encoding="utf-8-sig") as f:
-        return {r["name"]: r["subject_id"] for r in csv.DictReader(f)}
+            w.writerows(sorted(((s, n) for n, s in known.items())))
+    return known
 
 
 def action_of(stamp: str) -> str:
+    if stamp[:8] != MAIN_SHOOT_DATE:
+        raise ValueError(f"본 촬영일이 아닌 영상입니다 (SEQUENTIAL_SHOOT_DATES 확인): {stamp}")
     hhmmss = stamp[9:15]
     idx = sum(1 for s in ACTION_STARTS if hhmmss >= s)
     if idx == 0:
@@ -122,12 +138,25 @@ def main() -> None:
 
     clips = []
     for person_dir in sorted(d for d in source.iterdir() if d.is_dir()):
+        late = defaultdict(list)
         for mp4 in sorted(person_dir.rglob("*.mp4")):
             sid, note = subjects[person_dir.name], ""
             if mp4.name in SUBJECT_OVERRIDES and SUBJECT_OVERRIDES[mp4.name][0] != sid:
                 sid, note = SUBJECT_OVERRIDES[mp4.name]   # 아직 다른 사람 폴더에 있을 때만
-            clips.append({"path": mp4, "stamp": mp4.stem, "subject_id": sid,
-                          "action_id": action_of(mp4.stem), "landscape": is_landscape(mp4), "note": note})
+            c = {"path": mp4, "stamp": mp4.stem, "subject_id": sid, "landscape": is_landscape(mp4), "note": note}
+            if mp4.stem[:8] in SEQUENTIAL_SHOOT_DATES:
+                late[mp4.stem[:8]].append(c)
+                continue
+            c["action_id"] = action_of(mp4.stem)
+            clips.append(c)
+        for day, cs in late.items():
+            cs.sort(key=lambda c: c["stamp"])
+            if len(cs) != 2 * len(ACTIONS):
+                sys.exit(f"{day} 촬영분 {len(cs)}개 — 동작 {len(ACTIONS)}개 × 2 가 아니라 순서로 정할 수 없습니다")
+            for i, c in enumerate(cs):
+                c["action_id"] = ACTIONS[i // 2][0]
+                c["note"] = (c["note"] + "; " if c["note"] else "") + f"late shoot {day}"
+            clips.extend(cs)
 
     # 사람·동작별로 묶어서 정면/측면 정하기
     groups = defaultdict(list)
