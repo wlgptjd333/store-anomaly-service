@@ -153,4 +153,4 @@ python scripts/14_train_baseline.py
 ## 출처
 
 교과10 수업 저장소 [`vision-ai-lab/subject10_pose_action`](https://github.com/wlgptjd333/vision-ai-lab/tree/main/subject10_pose_action) 에서 시작했고,
-3팀 코드는 2026-11-17 이 저장소로 옮겼습니다. 이전 기록은 그쪽 커밋 `1f2afa1`, `3232372` 에 있습니다.
+3팀 코드는 2026-11-17 이 저장소로 옮겼습니다. 이전 기록은 그쪽 커밋 `b3d6c32`, `3e0e9a5` 에 있습니다.
