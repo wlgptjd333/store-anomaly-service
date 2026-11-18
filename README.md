@@ -8,6 +8,7 @@ Vision AI 과정 3팀 프로젝트 (2D 자세추정 수업에서 시작).
 - 목표: 기물 파손·폭력·배회·절도 의심·응급(쓰러짐) 동작을 Sequence 로 구분
 
 왜 이렇게 만들었는지(원본을 그대로 둔 이유, YOLO 를 고른 이유, 정규화·라벨·구간·개인정보 결정)는 [기술 결정 기록](docs/DESIGN_DECISIONS.md)에 숫자와 함께 적었습니다.
+정규화 방식 비교(수업의 이미지 기준 vs 몸 기준)는 [정규화 비교 분석](docs/NORMALIZATION_ANALYSIS.md), 전체 문서 목록은 [docs/README.md](docs/README.md).
 
 ## 동작 17개
 
@@ -80,6 +81,7 @@ Sequence CSV (clip 하나 = 파일 하나, 159열)
 | `scripts/09_action_keypoint_qa.py` | 동작별 중요 관절 QA (수업 5일차 기준) → `action_keypoint_qa.csv`, 사람 판정표 `human_qa.csv` |
 | `scripts/10_build_approved_manifest.py` | Human QA PASS 만 → `configs/approved_clip_manifest.csv` (동작 구간 포함) |
 | `scripts/11_build_subject_split.py` | 사람 단위 Train / Validation / Test + Leakage 검사 → `reports/splits/` (LOSO 5-fold 포함) |
+| `scripts/12_compare_normalizations.py` | 정규화 5가지 비교 (서 있는 자세 크기 차이, 측면 튐, 사람 단위 5-fold 분류) |
 | `scripts/08_draw_skeleton_figure.py` | 동작별 뼈대 그림 (영상·얼굴 없이) → `docs/images/actions_skeleton.png` |
 | `scripts/video_hub.py` | 같은 와이파이에서 팀원 핸드폰 영상을 모으는 업로드 서버 (표준 라이브러리만) |
 | `src/feature_utils.py` | 관절각도, 어깨 폭 정규화 (교과10 수업 코드) |
@@ -98,6 +100,7 @@ Sequence CSV (clip 하나 = 파일 하나, 159열)
 - 동작별 중요 관절 QA (수업 5일차 기준, 동작 구간 안): AUTO_PASS 164 · CHECK 6
   → CHECK 는 모두 YOLO 가 가장자리 물체를 사람으로 잡거나 멀리서 몇 Frame 놓친 것 → **Human QA PASS 170**
 - Split: Train S01~S03 (102) · Validation S04 (34) · Test S05 (34), Leakage 검사 통과
+- 정규화 비교: 다른 날 촬영한 S05 시험에서 이미지 기준 38.2% vs 몸 크기 + 화면 위치 67.6% → 학습 Feature 는 몸 기준으로
   - 자동 경고 3개는 모두 YOLO 검출 문제 (누운 자세 미검출 1, 1명을 2명으로 검출 2)
   - S01 은 A11·A12·A13·A17 에서 겉옷을 벗었을 뿐 같은 사람
   - S02 의 A13(테이블 내려치기)은 동작이 약하지만 "약한 예시"로 그대로 사용

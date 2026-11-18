@@ -1,0 +1,6 @@
+﻿method,name,standing_height_cv,hip_position_std,hip_position_std_rel,blowup_ratio_side,loso_accuracy_mean,loso_accuracy_std,loso_macro_f1_mean,portrait_height_mean,landscape_height_mean
+pixel,픽셀 그대로,0.2489,179.6294,0.2529,,0.6471,0.1392,0.6163,741.8318,528.1462
+image,"이미지 기준 (x/W, y/H) — 5일차",0.2306,0.0806,0.2008,,0.6471,0.1417,0.6201,0.3864,0.489
+shoulder,골반 중심·어깨 폭 — 3일차 38-D,1.3401,0.0,0.0,0.5605,0.6412,0.0506,0.6189,12.8743,9.0131
+body,골반 중심·몸 크기 — 3팀,0.0653,0.0,0.0,0.0,0.7294,0.0798,0.7039,2.3218,2.1033
+body_pos,몸 크기 + 골반 화면 위치,0.0653,0.0,0.0,,0.7471,0.0478,0.722,2.3218,2.1033
