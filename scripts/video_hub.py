@@ -32,7 +32,10 @@ NAME_BAD = set('\\/:*?"<>|\r\n\t\0')
 MAX_FAILS, LOCK_SECONDS = 8, 60
 KEEP_FREE = 2 * 1024 ** 3
 CHUNK = 1024 * 1024
-DEFAULT_PEOPLE = "S01,S02,S03,S04,S05,S06"
+# 팀원 실명은 Git 에 올리지 않는다 → data/people.txt (Git 제외) 또는 --people 로 넣고, 없으면 가명 S01~S06
+PEOPLE_FILE = Path(__file__).resolve().parents[1] / "data" / "people.txt"
+DEFAULT_PEOPLE = (PEOPLE_FILE.read_text(encoding="utf-8").strip() if PEOPLE_FILE.exists()
+                  else "S01,S02,S03,S04,S05,S06")
 
 
 def clean(text, limit):
