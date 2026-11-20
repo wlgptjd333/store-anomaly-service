@@ -78,6 +78,7 @@ Sequence CSV (clip 하나 = 파일 하나, 159열)
 | `scripts/04_make_review_sheets.py` | 라벨 검수 그림 → `reports/review/`, 점검표 → `reports/tables/review_checklist.csv` |
 | `scripts/05_summarize_sequences.py` | 영상별 QA → `reports/tables/sequence_qa.csv` |
 | `scripts/06_estimate_segments.py` | 동작 시작·끝 자동 추정 → `reports/tables/segments_auto.csv` (누움·앉음 동작은 일어나기 직전까지, `--sheets` 로 확인 그림) |
+| `scripts/07_render_overlay.py` | Sequence CSV 의 관절별 Confidence(초록·주황·빨강)·평균 conf 그래프를 원본 위에 그린 재생용 영상 → `reports/videos/<clip_id>_overlay.mp4` (`--clip`, `--subject`, `--all`) |
 | `scripts/09_action_keypoint_qa.py` | 동작별 중요 관절 QA (수업 5일차 기준) → `action_keypoint_qa.csv`, 사람 판정표 `human_qa.csv` |
 | `scripts/10_build_approved_manifest.py` | Human QA PASS 만 → `configs/approved_clip_manifest.csv` (동작 구간 포함) |
 | `scripts/11_build_subject_split.py` | 사람 단위 Train / Validation / Test + Leakage 검사 → `reports/splits/` (LOSO 5-fold 포함) |
@@ -136,6 +137,7 @@ python scripts/04_make_review_sheets.py
 # 6일차 Baseline (승인 목록 configs/approved_clip_manifest.csv 기준, YOLO 다시 안 돌림)
 python scripts/13_build_sequence_dataset.py
 python scripts/14_train_baseline.py
+python scripts/07_render_overlay.py --subject S04   # YOLO 다시 안 돌림, 영상 1개 약 10초
 ```
 
 `yolo11n-pose.pt` 는 첫 실행 때 Ultralytics 가 자동으로 받습니다.
