@@ -54,6 +54,19 @@ Vision AI 과정 3팀 프로젝트 (2D 자세추정 수업에서 시작).
 - 목록: [`configs/clip_manifest.csv`](configs/clip_manifest.csv), 영상 상태: [`reports/tables/video_inventory.csv`](reports/tables/video_inventory.csv)
 - **촬영 원본·실명 대응표는 올리지 않습니다** (얼굴·이름이 나옴). 참가자는 가명 S01~S05 로만 씁니다.
 
+### 팀 통일 라벨 (2026-11-23)
+
+3팀이 공동 데이터 저장소에서 사람 번호·동작 번호·동작 이름을 하나로 맞췄습니다 (예: `S04_A001_T01`).
+이 저장소는 그 전에 만든 번호로 검수·학습을 끝냈기 때문에, **영상·구간·Feature 는 그대로 두고 이름표만 바꿔** 산출물을 다시 냈습니다.
+
+- 대응표: [`configs/unified_label_map.csv`](configs/unified_label_map.csv)
+  - 사람: 이 저장소 S01→S03, S02→S01, S03→S02, S04·S05 는 같음 → **Train 3명·Validation S04·Test S05 구성은 그대로**
+  - 방향: 정면 F → `T01`, 측면 S → `T02`
+  - 동작: `A01`→`A001` … `A17`→`A017` (예: A13 테이블 내려치기 = `shotgun`, A15 = `fall_sideways`)
+- 변환: `scripts/16_export_unified_labels.py` → [`reports/unified/`](reports/unified/) (영상 목록·구간·Split·예측·동작별 F1·사람 검수)
+- 확인: 통일 번호로 다시 학습해도 **영상마다 예측이 같고 정확도도 같습니다** ([`verify_same_results.csv`](reports/unified/verify_same_results.csv): 구간 모델 Val 76.5% / Test 70.6%, 영상 전체 모델 Val 73.5% / Test 61.8%).
+- 웹 서비스(store-anomaly-service)의 동작 이름은 발표(교과10 10일차) 뒤에 통일 이름으로 바꿀 예정입니다.
+
 ## Pipeline
 
 ```text
@@ -85,6 +98,8 @@ Sequence CSV (clip 하나 = 파일 하나, 159열)
 | `scripts/12_compare_normalizations.py` | 정규화 5가지 비교 (서 있는 자세 크기 차이, 측면 튐, 사람 단위 5-fold 분류) |
 | `scripts/13_build_sequence_dataset.py` | 입력 점검 + 동작 구간을 30단계로 보간한 고정 길이 Dataset → `reports/dataset/` |
 | `scripts/14_train_baseline.py` | Random Forest 실험 9개 (한 번에 하나씩 바꿈), 혼동 행렬, 틀린 영상, 마지막 Test S05 |
+| `scripts/15_export_service_model.py` | 웹 서비스용 모델 (5명 전부 학습) → `artifacts/service/` |
+| `scripts/16_export_unified_labels.py` | 팀 통일 라벨로 산출물 다시 쓰기 + 같은 결과인지 재학습 확인 → `reports/unified/` |
 | `scripts/08_draw_skeleton_figure.py` | 동작별 뼈대 그림 (영상·얼굴 없이) → `docs/images/actions_skeleton.png` |
 | `scripts/video_hub.py` | 같은 와이파이에서 팀원 핸드폰 영상을 모으는 업로드 서버 (표준 라이브러리만) |
 | `src/feature_utils.py` | 관절각도, 어깨 폭 정규화 (교과10 수업 코드) |
@@ -137,6 +152,7 @@ python scripts/04_make_review_sheets.py
 # 6일차 Baseline (승인 목록 configs/approved_clip_manifest.csv 기준, YOLO 다시 안 돌림)
 python scripts/13_build_sequence_dataset.py
 python scripts/14_train_baseline.py
+python scripts/16_export_unified_labels.py          # 팀 통일 라벨 산출물 (재학습으로 같은 결과 확인)
 python scripts/07_render_overlay.py --subject S04   # YOLO 다시 안 돌림, 영상 1개 약 10초
 ```
 
