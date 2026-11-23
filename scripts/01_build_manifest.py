@@ -10,6 +10,8 @@ from __future__ import annotations
 #   - 가로 영상은 측면. 세로 영상은 같은 동작 안에서 가로 영상이 있으면 정면,
 #     없으면 시간 순서로 정면 → 측면.
 #   - 같은 사람·동작·방향을 다시 찍었으면 Take 번호를 T01, T02 ... 로 붙임.
+#   - 2026-11-23 뒷모습 재촬영: "공유 자료/S0x/S0x_A0xx_T03.mp4" (팀 통일 번호, T03 = 뒤)
+#     → configs/unified_label_map.csv 로 이 저장소 번호로 되돌려 view "B" 로 붙임 (T03_S0x_A0x_T01_B)
 # 출력:
 #   configs/action_classes.csv   17개 동작 정의
 #   configs/clip_manifest.csv    MP4 한 개당 한 행 (이름 없음, 가명 S01~)
@@ -22,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import re
 import shutil
 import sys
 from collections import Counter, defaultdict
@@ -33,6 +36,10 @@ import cv2
 ROOT = Path(__file__).resolve().parents[1]
 TEAM_DATA = ROOT / "data"
 DEFAULT_SOURCE = "/mnt/d/3팀드라이브/교과10 동작 영상"
+BACK_SOURCE = "/mnt/d/3팀드라이브/공유 자료"
+UNIFIED_MAP = ROOT / "configs" / "unified_label_map.csv"
+# 핸드폰 원본 이름(YYYYMMDD_HHMMSS)만 읽음 — 같은 폴더에 생긴 다른 자료(예: "5일차 우리꺼 영상")는 건너뜀
+PHONE_NAME = re.compile(r"^\d{8}_\d{6}$")
 
 # (action_id, action_label, 한글 이름, 분류) — 교과12 VICON 촬영 동작 17개 문서와 같은 순서
 ACTIONS = [
@@ -71,6 +78,8 @@ SUBJECT_OVERRIDES = {
 }
 
 
+VIEW_KO = {"F": "정면", "S": "측면", "B": "뒤"}
+
 # 라벨 검수(2026-11-17)에서 확인한 실제 촬영 모습 — 이름과 다른 동작만 적음
 FILMED_AS = {
     "A08": "책상 모서리에 올라가 걸터앉아 휴대폰 보기 (의자 대신 책상, 뛰어오르지 않음)",
@@ -83,6 +92,7 @@ def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--source", default=DEFAULT_SOURCE, help="사람별 폴더가 있는 원본 영상 폴더")
     p.add_argument("--copy", action="store_true", help="T03 이름으로 data/ 아래에 복사")
+    p.add_argument("--back-source", default=BACK_SOURCE, help="뒷모습(통일 번호 *_T03.mp4) 폴더, 빈 문자열이면 안 씀")
     return p.parse_args()
 
 
@@ -91,7 +101,7 @@ def load_subjects(source: Path) -> dict[str, str]:
     처음이면 폴더 이름 순서로 만들고, 나중에 생긴 사람 폴더는 다음 번호(S05..)로 뒤에 붙임
     — 이미 붙은 번호는 바꾸지 않는다."""
     path = TEAM_DATA / "subjects.csv"
-    names = sorted(d.name for d in source.iterdir() if d.is_dir() and any(d.rglob("*.mp4")))
+    names = sorted(d.name for d in source.iterdir() if d.is_dir() and any(PHONE_NAME.match(m.stem) for m in d.rglob("*.mp4")))
     known: dict[str, str] = {}
     if path.exists():
         with path.open(encoding="utf-8-sig") as f:
@@ -131,15 +141,29 @@ def is_landscape(path: Path) -> bool:
     return w > h
 
 
+def back_clips(source: Path) -> list[dict]:
+    """뒷모습 재촬영분. 파일 이름이 이미 팀 통일 번호(S0x_A0xx_T03)라 순서·시각 추정 없이 번호만 바꾼다."""
+    m = list(csv.DictReader(UNIFIED_MAP.open(encoding="utf-8-sig")))
+    subj = {r["unified_id"]: r["team_repo_id"] for r in m if r["kind"] == "subject"}
+    act = {r["unified_id"]: r["team_repo_id"] for r in m if r["kind"] == "action"}
+    out = []
+    for mp4 in sorted(source.glob("S0?/S0?_A???_T03.mp4")):
+        s, a, _ = mp4.stem.split("_")
+        stamp = datetime.fromtimestamp(mp4.stat().st_mtime).strftime("%Y%m%d_%H%M%S")
+        out.append({"path": mp4, "stamp": stamp, "subject_id": subj[s], "action_id": act[a], "view": "B",
+                    "take_id": "T01", "landscape": False, "note": f"back view (unified {mp4.stem})"})
+    return out
+
+
 def main() -> None:
     args = parse_args()
     source = Path(args.source)
     subjects = load_subjects(source)
 
     clips = []
-    for person_dir in sorted(d for d in source.iterdir() if d.is_dir()):
+    for person_dir in sorted(d for d in source.iterdir() if d.is_dir() and d.name in subjects):
         late = defaultdict(list)
-        for mp4 in sorted(person_dir.rglob("*.mp4")):
+        for mp4 in sorted(m for m in person_dir.rglob("*.mp4") if PHONE_NAME.match(m.stem)):
             sid, note = subjects[person_dir.name], ""
             if mp4.name in SUBJECT_OVERRIDES and SUBJECT_OVERRIDES[mp4.name][0] != sid:
                 sid, note = SUBJECT_OVERRIDES[mp4.name]   # 아직 다른 사람 폴더에 있을 때만
@@ -179,6 +203,11 @@ def main() -> None:
             if takes[c["view"]] > 1:
                 c["note"] = (c["note"] + "; " if c["note"] else "") + "reshoot"
 
+    if args.back_source:
+        back = back_clips(Path(args.back_source))
+        clips.extend(back)
+        print(f"뒷모습 {len(back)}개 추가 ({args.back_source})")
+
     labels = {a[0]: a[1] for a in ACTIONS}
     rows = []
     for c in sorted(clips, key=lambda c: (c["subject_id"], c["action_id"], c["view"], c["take_id"])):
@@ -195,7 +224,8 @@ def main() -> None:
 
     # 빠진 정면/측면 표시 (사람 × 동작 × 방향)
     have = {(r["subject_id"], r["action_id"], r["view"]) for r in rows}
-    missing = [(s, a[0], v) for s in sorted(set(subjects.values())) for a in ACTIONS for v in "FS"
+    views = "FSB" if any(r["view"] == "B" for r in rows) else "FS"
+    missing = [(s, a[0], v) for s in sorted(set(subjects.values())) for a in ACTIONS for v in views
                if (s, a[0], v) not in have]
 
     cfg = ROOT / "configs"
@@ -237,12 +267,12 @@ def main() -> None:
     print(f"MP4: {len(rows)}개 / 사람 {len(set(subjects.values()))}명 / 동작 {len(ACTIONS)}개")
     by_subject = Counter((r["subject_id"], r["view"]) for r in rows)
     for s in sorted(set(subjects.values())):
-        print(f"  {s}: 정면 {by_subject[(s, 'F')]} · 측면 {by_subject[(s, 'S')]}")
+        print(f"  {s}: 정면 {by_subject[(s, 'F')]} · 측면 {by_subject[(s, 'S')]} · 뒤 {by_subject[(s, 'B')]}")
     for r in rows:
         if r["note"]:
             print(f"  [참고] {r['clip_id']}: {r['note']}")
     for s, a, v in missing:
-        print(f"  [없음] {s} {a} {'정면' if v == 'F' else '측면'}")
+        print(f"  [없음] {s} {a} {VIEW_KO[v]}")
     print(f"Saved: {cfg / 'clip_manifest.csv'}")
 
 

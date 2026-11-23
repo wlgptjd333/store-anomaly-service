@@ -6,6 +6,7 @@ subject,S04,S04,,,
 subject,S05,S05,,,
 view,F,T01,,정면,
 view,S,T02,,측면,
+view,B,T03,,뒷모습,2026-11-23 재촬영
 action,A01,A001,kiosk_tap,키오스크 두드리기,
 action,A02,A002,throw_one_hand,한손 물건 던지기,
 action,A03,A003,front_kick,앞차기,

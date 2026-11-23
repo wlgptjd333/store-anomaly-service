@@ -71,6 +71,7 @@ def clip_seconds() -> list[float]:
 
 def main() -> None:
     df = pd.read_csv(DATA)
+    df = df[df.view.isin(["F", "S"])].reset_index(drop=True)  # 서비스 모델은 정면·측면 170개 그대로 (뒷모습은 18번 비교 후 결정)
     acts = {r["action_id"]: r for r in csv.DictReader((ROOT / "configs" / "action_classes.csv").open(encoding="utf-8-sig"))}
     X, y = df[COLUMNS].to_numpy(float), df["action_id"].to_numpy()
 

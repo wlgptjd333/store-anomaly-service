@@ -55,7 +55,7 @@ ACT_LABEL, ACT_KO = table("action", "unified_label"), table("action", "unified_n
 
 def check_map() -> None:
     assert len(SUBJ) == 5 and len(set(SUBJ.values())) == 5, "사람 번호 대응이 1:1 이 아님"
-    assert len(VIEW) == 2 and len(ACT) == 17 and len(set(ACT.values())) == 17, "방향·동작 대응 확인"
+    assert len(VIEW) == 3 and len(ACT) == 17 and len(set(ACT.values())) == 17, "방향·동작 대응 확인"
 
 
 def new_clip_id(old: str) -> str:
@@ -99,7 +99,7 @@ def split_of(subject: str) -> str:
 def verify() -> pd.DataFrame:
     rows = []
     for window in ("segment", "whole"):
-        old = pd.read_csv(DATASET / f"sequence_dataset_{window}.csv")
+        old = train14.load_dataset(window)
         new = convert(old)
         new.to_csv(DATASET / f"sequence_dataset_{window}_unified.csv", index=False, encoding="utf-8-sig")
         X = old[train14.cols("body40", "sequence")].to_numpy(float)

@@ -3,7 +3,7 @@
 무인 아이스크림 할인점 CCTV 를 가정하고, 사람의 **2D 자세(Pose)** 로 매장 안 이상행동을 찾는 팀 프로젝트입니다.
 Vision AI 과정 3팀 프로젝트 (2D 자세추정 수업에서 시작).
 
-- 입력: 핸드폰으로 찍은 RGB 영상 (정면·측면)
+- 입력: 핸드폰으로 찍은 RGB 영상 (정면·측면, 11/23 뒷모습 추가)
 - 방법: YOLO Pose → COCO 17 Keypoint → 정규화 Feature → Frame 을 시간 순서로 묶은 Sequence
 - 목표: 기물 파손·폭력·배회·절도 의심·응급(쓰러짐) 동작을 Sequence 로 구분
 
@@ -50,7 +50,9 @@ Vision AI 과정 3팀 프로젝트 (2D 자세추정 수업에서 시작).
 
 - 영상 170개 = 동작 17개 × 참가자 5명 × 정면·측면, 약 60fps, 총 19.5분 (70,159 Frame)
   - S01~S04 는 2026-11-13 함께 촬영, S05 는 2026-11-16 따로 촬영 (A01 → A17 순서로 정면·측면)
-- 이름 규칙: `T03_S{참가자}_A{동작}_T{테이크}_{F|S}` (예: `T03_S01_A07_T01_F` = 참가자 1, 바닥에 앉기, 정면)
+- **+ 뒷모습 85개 (2026-11-23 재촬영, 5명 × 17동작)** → 모두 255개. 팀 드라이브에 통일 번호 `S0x_A0xx_T03` 으로 올라온 것을
+  `01_build_manifest.py` 가 이 저장소 번호로 되돌려 방향 `B` 로 붙임
+- 이름 규칙: `T03_S{참가자}_A{동작}_T{테이크}_{F|S|B}` (예: `T03_S01_A07_T01_F` = 참가자 1, 바닥에 앉기, 정면)
 - 목록: [`configs/clip_manifest.csv`](configs/clip_manifest.csv), 영상 상태: [`reports/tables/video_inventory.csv`](reports/tables/video_inventory.csv)
 - **촬영 원본·실명 대응표는 올리지 않습니다** (얼굴·이름이 나옴). 참가자는 가명 S01~S05 로만 씁니다.
 
@@ -61,7 +63,7 @@ Vision AI 과정 3팀 프로젝트 (2D 자세추정 수업에서 시작).
 
 - 대응표: [`configs/unified_label_map.csv`](configs/unified_label_map.csv)
   - 사람: 이 저장소 S01→S03, S02→S01, S03→S02, S04·S05 는 같음 → **Train 3명·Validation S04·Test S05 구성은 그대로**
-  - 방향: 정면 F → `T01`, 측면 S → `T02`
+  - 방향: 정면 F → `T01`, 측면 S → `T02`, 뒤 B → `T03`
   - 동작: `A01`→`A001` … `A17`→`A017` (예: A13 테이블 내려치기 = `shotgun`, A15 = `fall_sideways`)
 - 변환: `scripts/16_export_unified_labels.py` → [`reports/unified/`](reports/unified/) (영상 목록·구간·Split·예측·동작별 F1·사람 검수)
 - 확인: 통일 번호로 다시 학습해도 **영상마다 예측이 같고 정확도도 같습니다** ([`verify_same_results.csv`](reports/unified/verify_same_results.csv): 구간 모델 Val 76.5% / Test 70.6%, 영상 전체 모델 Val 73.5% / Test 61.8%).
@@ -101,6 +103,7 @@ Sequence CSV (clip 하나 = 파일 하나, 159열)
 | `scripts/15_export_service_model.py` | 웹 서비스용 모델 (5명 전부 학습) → `artifacts/service/` |
 | `scripts/16_export_unified_labels.py` | 팀 통일 라벨로 산출물 다시 쓰기 + 같은 결과인지 재학습 확인 → `reports/unified/` |
 | `scripts/17_flip_and_view_check.py` | 좌우 반전 증강 전/후, 학습에 없던 촬영 각도 정확도 → `flip_augmentation.csv`, `view_generalization.csv` |
+| `scripts/18_back_view_experiments.py` | 뒷모습을 학습에 넣었을 때 (정면·측면·뒤 따로, 좌우 반전, 얼굴 관절 빼기, 동작별) → `back_view_*.csv`, `docs/images/back_view_summary.png` |
 | `scripts/08_draw_skeleton_figure.py` | 동작별 뼈대 그림 (영상·얼굴 없이) → `docs/images/actions_skeleton.png` |
 | `scripts/video_hub.py` | 같은 와이파이에서 팀원 핸드폰 영상을 모으는 업로드 서버 (표준 라이브러리만) |
 | `src/feature_utils.py` | 관절각도, 어깨 폭 정규화 (교과10 수업 코드) |
@@ -136,6 +139,18 @@ Sequence CSV (clip 하나 = 파일 하나, 159열)
 
 ![혼동 행렬](docs/images/baseline_confusion.png)
 
+- **뒷모습 추가 (11/23, [Baseline 성능평가 5-2](docs/BASELINE_EVALUATION.md)):** 처음 보는 사람 기준(LOSO)
+
+  | 학습 | 정면·측면 | 뒤 | Test S05 전체 |
+  |---|---:|---:|---:|
+  | 정면·측면 (기존) | 74.9% | 38.8% | 55.6% |
+  | **정면·측면·뒤 + 좌우 반전** | **79.6%** | **72.9%** | **74.2%** |
+
+  - 뒤를 넣어도 정면·측면은 떨어지지 않음. 뒷모습에서 약한 동작: 무릎 꿇고 꺼내기 27% · 휘두르기 33% · 테이블 내려치기 40%
+  - 위 기준 모델 표(170개)는 정면·측면만으로 다시 돌려도 같은 숫자 (`BASE_VIEWS`)
+
+![뒷모습 실험](docs/images/back_view_summary.png)
+
 ## 실행
 
 ```bash
@@ -154,6 +169,8 @@ python scripts/04_make_review_sheets.py
 python scripts/13_build_sequence_dataset.py
 python scripts/14_train_baseline.py
 python scripts/16_export_unified_labels.py          # 팀 통일 라벨 산출물 (재학습으로 같은 결과 확인)
+python scripts/17_flip_and_view_check.py            # 좌우 반전·촬영 각도
+python scripts/18_back_view_experiments.py          # 뒷모습 추가 실험 (약 4분)
 python scripts/07_render_overlay.py --subject S04   # YOLO 다시 안 돌림, 영상 1개 약 10초
 ```
 
@@ -168,6 +185,10 @@ python scripts/07_render_overlay.py --subject S04   # YOLO 다시 안 돌림, �
 - [ ] 시간 순서 모델 (1D-CNN / GRU) 을 같은 Split 으로 비교
 - [ ] VICON 3D 동작을 여러 각도로 2D 투영해 학습 데이터 늘리기 (동작 번호 대응 확인부터)
 - [ ] 동작 구간 끝 사람 확인 (누운 동작)
+- [x] 뒷모습 85개 촬영·학습 (11/23) — 뒤 39% → 73%, 정면·측면 유지
+- [ ] 뒷모습 85개 사람이 영상으로 라벨 확인 (지금은 자동 QA + 모델 예측 + 8개 직접 확인)
+- [ ] 발표 뒤 웹 서비스 모델을 "정면·측면·뒤 + 좌우 반전"으로 다시 내보내기
+- [ ] 대각선(45°) 촬영
 
 ## 출처
 

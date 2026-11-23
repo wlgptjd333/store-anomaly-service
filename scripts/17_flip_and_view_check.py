@@ -66,7 +66,7 @@ def acc(train: pd.DataFrame, test: pd.DataFrame, aug: bool, seed=None) -> float:
 def main() -> None:
     rows, views = [], []
     for window in ("segment", "whole"):
-        df = pd.read_csv(ROOT / "reports" / "dataset" / f"sequence_dataset_{window}.csv")
+        df = t14.load_dataset(window)
         assert np.allclose(flip(flip(df))[COLS].to_numpy(float), df[COLS].to_numpy(float), equal_nan=True)
         subs = sorted(df.subject_id.unique())
         tr = df[df.subject_id.isin(SPLIT["train"])]

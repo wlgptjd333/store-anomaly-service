@@ -1,0 +1,18 @@
+﻿action_id,name_ko,acc_F,acc_S,acc_B,window,config
+A01,키오스크 내려치기,86.7,80.0,73.3,segment,FSB+flip
+A02,한 팔로 물건 던지기,80.0,100.0,80.0,segment,FSB+flip
+A03,냉동고 앞차기,73.3,60.0,53.3,segment,FSB+flip
+A04,뽑기 기계 흔들기,80.0,46.7,60.0,segment,FSB+flip
+A05,양손으로 밀치기,86.7,66.7,86.7,segment,FSB+flip
+A06,도구 들고 양손 휘두르기,100.0,60.0,33.3,segment,FSB+flip
+A07,바닥 매트에 주저앉기,100.0,100.0,100.0,segment,FSB+flip
+A08,의자에 뛰어올라 앉아 휴대폰 보기,46.7,100.0,80.0,segment,FSB+flip
+A09,엎드려 휴대폰 보기,80.0,100.0,60.0,segment,FSB+flip
+A10,누워서 휴대폰 보다 옆으로 돌아눕기,100.0,80.0,86.7,segment,FSB+flip
+A11,몸통 박치기,93.3,93.3,100.0,segment,FSB+flip
+A12,무릎 꿇고 뽑기 인형 꺼내기,80.0,100.0,26.7,segment,FSB+flip
+A13,테이블 내려치기,40.0,46.7,40.0,segment,FSB+flip
+A14,연속 구토하기,80.0,100.0,100.0,segment,FSB+flip
+A15,벽에 기대어 잠들기,46.7,80.0,80.0,segment,FSB+flip
+A16,뒤로 기절하기,73.3,80.0,100.0,segment,FSB+flip
+A17,걸려 넘어지기 (앞으로),86.7,80.0,80.0,segment,FSB+flip

@@ -48,6 +48,8 @@ DATA = ROOT / "reports" / "dataset"
 TABLES = ROOT / "reports" / "tables"
 IMG = ROOT / "docs" / "images"
 STEPS = CFG["sequence_steps"]
+# 기준 모델·문서 숫자는 정면·측면 170개 기준. 뒷모습(B, 11/23 재촬영)은 18번에서 따로 비교한다.
+BASE_VIEWS = ("F", "S")
 
 KP = ["nose", "left_eye", "right_eye", "left_ear", "right_ear", "left_shoulder", "right_shoulder",
       "left_elbow", "right_elbow", "left_wrist", "right_wrist", "left_hip", "right_hip",
@@ -98,6 +100,11 @@ def fit_predict(X, y, tr, te, seed: int | None = None):
     return rf, rf.classes_[proba.argmax(1)], proba
 
 
+def load_dataset(window: str, views=BASE_VIEWS) -> pd.DataFrame:
+    df = pd.read_csv(DATA / f"sequence_dataset_{window}.csv")
+    return df if views is None else df[df.view.isin(views)].reset_index(drop=True)
+
+
 def setup_font() -> None:
     f = Path("/mnt/c/Windows/Fonts/malgun.ttf")
     if f.exists():
@@ -107,7 +114,7 @@ def setup_font() -> None:
 
 
 def main() -> None:
-    frames = {w: pd.read_csv(DATA / f"sequence_dataset_{w}.csv") for w in ("segment", "whole")}
+    frames = {w: load_dataset(w) for w in ("segment", "whole")}
     base = frames["segment"]
     assert (base["clip_id"] == frames["whole"]["clip_id"]).all()
     y = base["action_id"].to_numpy()

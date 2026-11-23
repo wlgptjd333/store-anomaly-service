@@ -218,7 +218,7 @@ def main() -> None:
     for i, clip in enumerate(clips, 1):
         out, rows = build(clip, model, cfg, device, kp_conf, args.max_frames, args.save_video)
         s = summarize(rows)
-        print(f"[{i}/{len(clips)}] {clip['clip_id']} ({clip['action_label']}, {'정면' if clip['view'] == 'F' else '측면'})")
+        print(f"[{i}/{len(clips)}] {clip['clip_id']} ({clip['action_label']}, {dict(F='정면', S='측면', B='뒤')[clip['view']]})")
         print(f"  Frame {s['frames']} · Pose 성공 {s['pose_ok_ratio']:.1%} · Feature 성공 {s['feature_ok_ratio']:.1%}"
               f" · 어깨·골반 신뢰 {s['core_ok_ratio']:.1%} · 평균 Conf {s['mean_conf']:.3f}")
         print(f"  몸 크기 정규화 성공 {s['body_ok_ratio']:.1%} · 어깨 폭 경고 {s['scale_warn_ratio']:.1%} · 여러 사람 Frame {s['multi_person_frames']}"

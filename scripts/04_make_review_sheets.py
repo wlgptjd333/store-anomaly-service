@@ -127,7 +127,7 @@ def main() -> None:
                 flags.append("long")
 
             lab = np.full((THUMB_H, LABEL_W, 3), 255, np.uint8)
-            for i, t in enumerate([cid, f"{c['subject_id']}  {'FRONT' if c['view'] == 'F' else 'SIDE'}",
+            for i, t in enumerate([cid, f"{c['subject_id']}  {dict(F='FRONT', S='SIDE', B='BACK')[c['view']]}",
                                    f"{dur:.2f}s (med {med:.2f})", " ".join(flags) or "auto OK"]):
                 col = (0, 0, 200) if (i == 3 and flags) else (0, 0, 0)
                 cv2.putText(lab, t, (8, 40 + i * 34), cv2.FONT_HERSHEY_SIMPLEX, 0.55, col, 1 + (i == 0))

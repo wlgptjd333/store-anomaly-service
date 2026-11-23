@@ -70,7 +70,7 @@ def main() -> None:
     for k, v in sets.items():
         write(OUT / f"{k}.csv", [{**r, "split": k} for r in v])
         c = Counter(r["view"] for r in v)
-        print(f"{k:10s} 사람 {sorted({r['subject_id'] for r in v})} · 영상 {len(v)} (정면 {c['F']} 측면 {c['S']})")
+        print(f"{k:10s} 사람 {sorted({r['subject_id'] for r in v})} · 영상 {len(v)} (정면 {c['F']} 측면 {c['S']} 뒤 {c['B']})")
     print("Leakage 검사 통과: 사람·영상 겹침 없음, 빠진 영상 없음, 세트마다 동작 17개")
 
     if cfg.get("leave_one_subject_out"):

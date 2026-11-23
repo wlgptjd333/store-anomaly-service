@@ -118,7 +118,7 @@ def main() -> None:
           f" · 몸 크기 정규화 성공 {qa.body_ok_ratio.mean():.1%}")
     by_view = qa.groupby("view")[["mean_conf", "wrist_low_ratio", "scale_warn_ratio"]].mean().round(3)
     for view, r in by_view.iterrows():
-        print(f"  {'정면' if view == 'F' else '측면'}: 평균 Conf {r.mean_conf} · 손목 저신뢰 {r.wrist_low_ratio:.1%}"
+        print(f"  {dict(F='정면', S='측면', B='뒤')[view]}: 평균 Conf {r.mean_conf} · 손목 저신뢰 {r.wrist_low_ratio:.1%}"
               f" · 어깨 폭 경고 {r.scale_warn_ratio:.1%}")
     review = qa[qa.auto_status == "REVIEW"]
     if len(review):
