@@ -1,0 +1,195 @@
+{
+  "model": "RandomForestClassifier",
+  "feature_set": "body40",
+  "window": "whole",
+  "sequence_steps": 30,
+  "frame_features": [
+    "bn_nose_x",
+    "bn_nose_y",
+    "bn_left_eye_x",
+    "bn_left_eye_y",
+    "bn_right_eye_x",
+    "bn_right_eye_y",
+    "bn_left_ear_x",
+    "bn_left_ear_y",
+    "bn_right_ear_x",
+    "bn_right_ear_y",
+    "bn_left_shoulder_x",
+    "bn_left_shoulder_y",
+    "bn_right_shoulder_x",
+    "bn_right_shoulder_y",
+    "bn_left_elbow_x",
+    "bn_left_elbow_y",
+    "bn_right_elbow_x",
+    "bn_right_elbow_y",
+    "bn_left_wrist_x",
+    "bn_left_wrist_y",
+    "bn_right_wrist_x",
+    "bn_right_wrist_y",
+    "bn_left_hip_x",
+    "bn_left_hip_y",
+    "bn_right_hip_x",
+    "bn_right_hip_y",
+    "bn_left_knee_x",
+    "bn_left_knee_y",
+    "bn_right_knee_x",
+    "bn_right_knee_y",
+    "bn_left_ankle_x",
+    "bn_left_ankle_y",
+    "bn_right_ankle_x",
+    "bn_right_ankle_y",
+    "left_elbow_angle",
+    "right_elbow_angle",
+    "left_knee_angle",
+    "right_knee_angle",
+    "hip_x_img",
+    "hip_y_img"
+  ],
+  "n_features": 1200,
+  "classes": [
+    "A01",
+    "A02",
+    "A03",
+    "A04",
+    "A05",
+    "A06",
+    "A07",
+    "A08",
+    "A09",
+    "A10",
+    "A11",
+    "A12",
+    "A13",
+    "A14",
+    "A15",
+    "A16",
+    "A17"
+  ],
+  "class_info": {
+    "A01": {
+      "label": "kiosk_slam",
+      "name_ko": "키오스크 내려치기",
+      "category": "property_damage"
+    },
+    "A02": {
+      "label": "one_arm_throw",
+      "name_ko": "한 팔로 물건 던지기",
+      "category": "property_damage"
+    },
+    "A03": {
+      "label": "freezer_front_kick",
+      "name_ko": "냉동고 앞차기",
+      "category": "property_damage"
+    },
+    "A04": {
+      "label": "claw_machine_shake",
+      "name_ko": "뽑기 기계 흔들기",
+      "category": "property_damage"
+    },
+    "A05": {
+      "label": "two_hand_shove",
+      "name_ko": "양손으로 밀치기",
+      "category": "violence"
+    },
+    "A06": {
+      "label": "two_hand_weapon_swing",
+      "name_ko": "도구 들고 양손 휘두르기",
+      "category": "violence"
+    },
+    "A07": {
+      "label": "sit_on_floor_mat",
+      "name_ko": "바닥 매트에 주저앉기",
+      "category": "loitering"
+    },
+    "A08": {
+      "label": "jump_onto_chair_phone",
+      "name_ko": "의자에 뛰어올라 앉아 휴대폰 보기",
+      "category": "loitering"
+    },
+    "A09": {
+      "label": "lie_prone_phone",
+      "name_ko": "엎드려 휴대폰 보기",
+      "category": "loitering"
+    },
+    "A10": {
+      "label": "lie_supine_roll_side",
+      "name_ko": "누워서 휴대폰 보다 옆으로 돌아눕기",
+      "category": "loitering"
+    },
+    "A11": {
+      "label": "body_check",
+      "name_ko": "몸통 박치기",
+      "category": "violence"
+    },
+    "A12": {
+      "label": "kneel_grab_prize",
+      "name_ko": "무릎 꿇고 뽑기 인형 꺼내기",
+      "category": "theft_suspect"
+    },
+    "A13": {
+      "label": "table_slam",
+      "name_ko": "테이블 내려치기",
+      "category": "property_damage"
+    },
+    "A14": {
+      "label": "repeated_vomiting",
+      "name_ko": "연속 구토하기",
+      "category": "emergency"
+    },
+    "A15": {
+      "label": "sleep_against_wall",
+      "name_ko": "벽에 기대어 잠들기",
+      "category": "emergency"
+    },
+    "A16": {
+      "label": "faint_backward",
+      "name_ko": "뒤로 기절하기",
+      "category": "emergency"
+    },
+    "A17": {
+      "label": "trip_fall_forward",
+      "name_ko": "걸려 넘어지기 (앞으로)",
+      "category": "emergency"
+    }
+  },
+  "rf_params": {
+    "n_estimators": 300,
+    "max_depth": null,
+    "random_state": 42,
+    "class_weight": "balanced"
+  },
+  "pose": {
+    "model": "yolo11n-pose.pt",
+    "image_size": 640,
+    "person_confidence": 0.25,
+    "keypoint_confidence": 0.5
+  },
+  "valid_frame_rule": {
+    "min_valid_frames": 10,
+    "min_valid_ratio": 0.5
+  },
+  "body_scale": {
+    "shoulder_ratio": 0.7,
+    "min_px": 5.0
+  },
+  "train_clip_seconds": {
+    "min": 2.18,
+    "median": 5.47,
+    "max": 26.81
+  },
+  "trained_on": "S01~S05 (170 clips, 17 actions x 2 views x 5 people)",
+  "evaluation_train_S01_S03": {
+    "validation_S04": {
+      "accuracy": 0.7353,
+      "macro_f1": 0.7451,
+      "clips": 34
+    },
+    "test_S05": {
+      "accuracy": 0.6176,
+      "macro_f1": 0.5824,
+      "clips": 34
+    }
+  },
+  "sklearn_version": "1.9.1",
+  "created_at": "2026-11-23T09:41:33"
+}
