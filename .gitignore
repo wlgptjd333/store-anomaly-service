@@ -36,3 +36,4 @@ reports/segments/
 artifacts/**/*.joblib
 reports/pose_compare/
 reports/experiments/
+reports/extra/

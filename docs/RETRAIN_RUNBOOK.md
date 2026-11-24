@@ -110,6 +110,8 @@ python scripts/13_build_sequence_dataset.py      # 30단계 고정 길이 → re
 | `22_gpu_search.py [--only 이름] [--test "a,b"]` | 1D-CNN 크기·평균 개수·mixup·TTA·TCN·Transformer·Pose 11s/11m·섞는 비율 | `gpu_search_*.csv` | GPU, 설정 하나에 1~4분 |
 | `23_mocap_synthetic.py [--views 8,16] [--test]` | 교과12 VICON 3D 를 가상 카메라로 2D 투영한 합성 데이터를 학습에 더하기 | `mocap_synthetic_*.csv` | GPU, 설정 하나에 약 7분 |
 | `24_geo_augment.py [--only rot,all] [--test all]` | Keypoint 회전·시간 늘이기·앞뒤 자르기·화면 위치 이동 증강 | `geo_augment_*.csv` | GPU, 설정 하나에 약 8분 |
+| `25_extra_videos.py --src <폴더> --name <이름> [--labels "파일=A12,..."]` | 학습 목록 밖 영상(새 구도)을 평가용 Sequence 로 | `reports/extra/<이름>/` (Git 제외) | GPU, 영상 5개 약 1분 |
+| `26_camera_robust.py [--only view,crop] [--skip-cv]` | 카메라 구도 강건 (위치 빼기·시점 증강·자르기·VICON·새 구도 학습), 새 구도 정답 확률까지 | `camera_robust_*.csv` | GPU, 설정 하나에 약 10~14분 |
 
 - 새 방법은 `20` 의 `configs()` 에 한 줄(또는 `DATASETS` 에 데이터 하나) 더하고 `python scripts/20_more_improvements.py <이름 일부>` 로 그것만 돌리면 기존 표에 합쳐집니다.
 - 입력을 바꾸는 실험은 기본 데이터를 건드리지 않게 만듭니다:
@@ -128,6 +130,7 @@ python scripts/13_build_sequence_dataset.py --smooth 5 --out-dir reports/experim
 ## 3. 서비스용 모델 내보내기
 
 ```bash
+python scripts/15_export_service_model.py --extra-csv reports/extra/s05_newcam/sequence_dataset_whole.csv   # 지금 서비스 (11/24 밤, 새 구도 5개 더함)
 python scripts/15_export_service_model.py                    # 기본: 정면·측면·뒤 + 좌우 반전, ExtraTrees, velocity·stats
 python scripts/15_export_service_model.py --model rf --extras ""            # 11/24 오전 모델 (비교용)
 python scripts/15_export_service_model.py --model rf --extras "" --views FS --no-flip   # 11/22 모델
@@ -135,6 +138,7 @@ python scripts/15_export_service_model.py --model rf --extras "" --views FS --no
 
 - 출력 `artifacts/service/`: `action_model.joblib`(ExtraTrees), `action_cnn.pt`(1D-CNN 3개), `feature_columns.json`, `training_info.json`
   - 1D-CNN 학습은 GPU 면 약 1분, CPU 만 있으면 수십 분. ExtraTrees 만 내보내려면 `--cnn-seeds ""` (이때 예전 `action_cnn.pt` 는 지움)
+- 새 구도 영상(25번)은 **평가(26번)를 먼저 기록한 뒤** `--extra-csv` 로 최종 학습에만 더함 (기록용 평가에는 안 들어감). `--no-pos`·`--view-aug`·`--crop-aug` 는 26번 비교용 옵션 (지금 서비스는 안 씀).
 - 화면에 Train S01~S03 → Validation S04 / Test S05 정확도가 방향별로 나옴 (기록용, `training_info.json` 에도 저장). 최종 모델은 5명 전부로 학습.
 - 서비스 화면·대시보드에 보이는 번호·이름은 **팀 통일 표기**(A001 `kiosk_tap` 키오스크 두드리기 …): `15` 가 [`configs/unified_label_map.csv`](../configs/unified_label_map.csv) 로 Class 를 바꿔 `training_info.json` 의 `class_info` 에 넣음 (분류는 `configs/action_classes.csv`). 이름을 바꾸려면 `unified_label_map.csv` 를 고치고, 서비스 `backend/analyses/actions.py` 도 같이 (Django 는 그 목록으로 화면·대시보드를 그림). 예전 번호로 내보내기는 `--repo-ids`.
 

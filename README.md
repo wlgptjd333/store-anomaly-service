@@ -105,13 +105,15 @@ Sequence CSV (clip 하나 = 파일 하나, 159열)
 | `scripts/12_compare_normalizations.py` | 정규화 5가지 비교 (서 있는 자세 크기 차이, 측면 튐, 사람 단위 5-fold 분류) |
 | `scripts/13_build_sequence_dataset.py` | 입력 점검 + 동작 구간을 30단계로 보간한 고정 길이 Dataset → `reports/dataset/` (실험용 `--steps` `--smooth` `--seq-dir` `--out-dir`) |
 | `scripts/14_train_baseline.py` | Random Forest 실험 9개 (한 번에 하나씩 바꿈), 혼동 행렬, 틀린 영상, 마지막 Test S05 |
-| `scripts/15_export_service_model.py` | 웹 서비스용 모델 (5명 전부, 기본 정면·측면·뒤 + 좌우 반전, ExtraTrees + 변화량·요약 통계 + 1D-CNN 3개 확률 평균) → `artifacts/service/` (`--cnn-seeds ""` 면 ExtraTrees 만) |
+| `scripts/15_export_service_model.py` | 웹 서비스용 모델 (5명 전부, 기본 정면·측면·뒤 + 좌우 반전, ExtraTrees + 변화량·요약 통계 + 1D-CNN 3개 확률 평균) → `artifacts/service/` (`--cnn-seeds ""` 면 ExtraTrees 만, `--extra-csv` 로 새 구도 영상을 최종 학습에만 더함 — 지금 서비스) |
 | `scripts/16_export_unified_labels.py` | 팀 통일 라벨로 산출물 다시 쓰기 + 같은 결과인지 재학습 확인 → `reports/unified/` |
 | `scripts/17_flip_and_view_check.py` | 좌우 반전 증강 전/후, 학습에 없던 촬영 각도 정확도 → `flip_augmentation.csv`, `view_generalization.csv` |
 | `scripts/19_model_improvement.py` | 서비스 모델 정확도 올리기 (Feature 덧붙이기 × RF·ExtraTrees·SVM, S01~S04 4-fold 로 고름) → `model_improvement_*.csv` |
 | `scripts/20_more_improvements.py` | 19번 모델에서 더 올리기 (Pose 11n·11s·11m, 단계 수, 떨림 줄이기, 좌우 반전 평균, 나무 설정, ET+SVM, 시간 자르기 증강) → `more_improvements_cv.csv` |
 | `scripts/23_mocap_synthetic.py` | 교과12 VICON 3D(17동작, 1명)를 가상 휴대폰 카메라 8·16방향으로 2D 투영 → 학습에만 더해 4-fold 비교 (연기자 본인이 평가 쪽이면 뺌) → `mocap_synthetic_*.csv` |
 | `scripts/24_geo_augment.py` | Keypoint 회전·시간 늘이기·앞뒤 자르기·화면 위치 이동 증강 비교 → `geo_augment_*.csv` |
+| `scripts/25_extra_videos.py` | 학습 목록 밖 영상(새 장소·새 카메라 구도)을 학습과 같은 방식으로 Sequence 로 → `reports/extra/<이름>/` (Git 제외) |
+| `scripts/26_camera_robust.py` | 카메라 구도 강건 비교 (골반 위치 빼기·시점 증강·자르기·VICON·새 구도 영상 학습) — 4-fold + 원래 구도 Test + 새 구도 → `camera_robust_*.csv` |
 | `scripts/22_gpu_search.py` | GPU 로 20가지 비교 (1D-CNN 크기·평균 개수·mixup·TTA·TCN·Transformer·Pose 11s/11m·섞는 비율, 4-fold, `--test` 로 확인) → `gpu_search_*.csv` |
 | `scripts/21_temporal_models.py` | 시간 순서 모델 1D-CNN·GRU 와 ExtraTrees 섞기 (4-fold, `--test` 로 Validation·Test 확인, GPU 약 4분) → `temporal_models_*.csv`. 모델 코드는 `src/temporal_cnn.py` (서비스와 같은 파일) |
 | `scripts/18_back_view_experiments.py` | 뒷모습을 학습에 넣었을 때 (정면·측면·뒤 따로, 좌우 반전, 얼굴 관절 빼기, 동작별) → `back_view_*.csv`, `docs/images/back_view_summary.png` |
@@ -201,7 +203,10 @@ python scripts/21_temporal_models.py --test        # 시간 순서 모델 1D-CNN
 python scripts/22_gpu_search.py                    # 20가지 비교 (GPU 약 30분), --test "이름" 으로 고른 뒤 확인
 python scripts/23_mocap_synthetic.py               # VICON 3D 합성 데이터 (교과12 3D JSON 필요, GPU 약 20분)
 python scripts/24_geo_augment.py                   # Keypoint 기하 증강 (GPU 약 40분)
-python scripts/15_export_service_model.py          # 서비스용 모델 → artifacts/service/ (서비스 저장소 scripts/update_model.sh 로 넣음)
+python scripts/25_extra_videos.py --src <영상 폴더> --name s05_newcam   # 새 구도 영상 → 평가용 Sequence
+python scripts/26_camera_robust.py                 # 카메라 구도 강건 비교 (GPU 약 1시간 30분)
+python scripts/15_export_service_model.py --extra-csv reports/extra/s05_newcam/sequence_dataset_whole.csv
+                                                   # 서비스용 모델 → artifacts/service/ (서비스 저장소 scripts/update_model.sh 로 넣음)
 python scripts/07_render_overlay.py --subject S04   # YOLO 다시 안 돌림, 영상 1개 약 10초
 ```
 
@@ -222,7 +227,8 @@ python scripts/07_render_overlay.py --subject S04   # YOLO 다시 안 돌림, �
 - [x] ExtraTrees + 변화량·요약 통계 (11/24, Test S05 74.5% → 78.4%), Pose 크기·기타 조정 비교 (20번, 바꾼 것 없음)
 - [x] 영상 추가·재학습·서비스 교체 [Runbook](docs/RETRAIN_RUNBOOK.md) + 서비스 `scripts/update_model.sh`
 - [x] Keypoint 기하 증강 (11/24 `24_geo_augment.py` — 회전·시간 늘이기·앞뒤 자르기, 최고 +0.8 로 기준 아래, **안 씀**)
-- [ ] 대각선(45°) 촬영 · 새 사람 (지금 가장 효과가 클 것, 서비스 `export_clips` 녹화 활용)
+- [x] 새 카메라 구도 평가·개선 (11/24 `25`·`26` — 팀원 높은 곳 대각선 5개 2/5, 증강 7가지는 효과 없음 → 그 5개를 학습에 더함: 4-fold 91.7 → 92.3, [5-8](docs/BASELINE_EVALUATION.md))
+- [ ] 다른 장소·높이 · 새 사람 영상 더 (평가 먼저 → 학습, 서비스 `export_clips` 녹화 활용)
 
 ## 출처
 
