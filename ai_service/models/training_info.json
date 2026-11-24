@@ -1,5 +1,5 @@
 {
-  "model": "RandomForestClassifier",
+  "model": "ExtraTreesClassifier",
   "feature_set": "body40",
   "window": "whole",
   "sequence_steps": 30,
@@ -45,7 +45,11 @@
     "hip_x_img",
     "hip_y_img"
   ],
-  "n_features": 1200,
+  "sequence_extras": [
+    "velocity",
+    "stats"
+  ],
+  "n_features": 2560,
   "classes": [
     "A01",
     "A02",
@@ -152,11 +156,12 @@
       "category": "emergency"
     }
   },
-  "rf_params": {
-    "n_estimators": 300,
+  "model_params": {
+    "class_weight": "balanced",
     "max_depth": null,
-    "random_state": 42,
-    "class_weight": "balanced"
+    "max_features": "sqrt",
+    "n_estimators": 1000,
+    "random_state": 42
   },
   "pose": {
     "model": "yolo11n-pose.pt",
@@ -186,22 +191,22 @@
   "flip_augmentation": true,
   "evaluation_train_S01_S03": {
     "validation_S04": {
-      "accuracy": 0.6863,
-      "macro_f1": 0.6703,
+      "accuracy": 0.8824,
+      "macro_f1": 0.8737,
       "clips": 51,
-      "accuracy_front": 0.8235,
-      "accuracy_side": 0.5882,
-      "accuracy_back": 0.6471
+      "accuracy_front": 0.9412,
+      "accuracy_side": 0.8824,
+      "accuracy_back": 0.8235
     },
     "test_S05": {
-      "accuracy": 0.7451,
-      "macro_f1": 0.7436,
+      "accuracy": 0.7843,
+      "macro_f1": 0.7686,
       "clips": 51,
-      "accuracy_front": 0.7647,
+      "accuracy_front": 0.8824,
       "accuracy_side": 0.7647,
       "accuracy_back": 0.7059
     }
   },
   "sklearn_version": "1.9.1",
-  "created_at": "2026-11-24T09:26:11"
+  "created_at": "2026-11-24T09:48:37"
 }

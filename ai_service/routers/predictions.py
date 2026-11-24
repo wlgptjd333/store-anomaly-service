@@ -53,7 +53,9 @@ def predict_video(request: Request, file: UploadFile = File(...)):
     if not video.tracks:
         message = "영상에서 사람을 찾지 못했습니다."
     elif not predictions:
-        message = "사람은 보였지만 관절이 충분히 보이지 않아 동작을 판단하지 못했습니다."
+        # 이유가 여러 가지(너무 짧게 보임 / 관절이 안 보임)라 첫 사람의 실제 사유를 붙인다
+        reason = skipped[0]["reason"] if skipped else "관절이 충분히 보이지 않음"
+        message = f"사람은 보였지만 동작을 판단하지 못했습니다: {reason}."
     else:
         message = ""
     return {

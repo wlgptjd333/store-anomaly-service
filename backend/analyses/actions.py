@@ -1,6 +1,6 @@
 """모델이 예측하는 17개 동작 (unmanned-store-anomaly configs/action_classes.csv 와 같은 번호).
 
-AI 서버의 rf_training_info.json 과 같은 목록이다. Django 는 화면 표시·예상 동작 선택·대시보드 집계에만 쓴다.
+AI 서버의 training_info.json 과 같은 목록이다. Django 는 화면 표시·예상 동작 선택·대시보드 집계에만 쓴다.
 """
 ACTIONS = [
     ("A01", "kiosk_slam", "키오스크 내려치기", "property_damage"),

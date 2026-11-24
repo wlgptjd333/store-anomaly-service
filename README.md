@@ -5,6 +5,12 @@
 
 > 데이터·모델 쪽 작업(촬영 정리, Pose 추출, QA, 학습·평가)은 [unmanned-store-anomaly](https://github.com/wlgptjd333/unmanned-store-anomaly) 저장소에 있고,
 > 이 저장소는 그 모델을 **웹 서비스로 연결하는 부분**만 담습니다. (데이터는 3팀 공동, 서비스는 개인 프로젝트)
+>
+> **안내서의 "기존 6개 Action 모델"과 다른 이유** — 안내서 기본은 6일차 6동작 Random Forest(1,140 Feature)입니다.
+> 강사님 안내(11/23)에 따라 제출판은 **3팀이 직접 찍은 17동작 데이터 모델**을 씁니다. 이 서비스 저장소 안에서는 모델을 학습하지 않고,
+> 학습은 데이터 저장소에서 따로 한 결과 파일 3개만 가져옵니다(6장).
+> 6일차 모델을 그대로 붙인 **6동작 버전**(T01: 6 Class · 1,140 Feature)은
+> [vision-ai-lab/…/vision_action_platform](https://github.com/wlgptjd333/vision-ai-lab/tree/main/subject10_pose_action/vision_action_platform) 에 있고, 웹 구조는 같습니다.
 
 ## 1. 프로젝트 소개
 
@@ -56,9 +62,9 @@ docker compose exec django python manage.py createsuperuser
 
 | 파일 | 내용 | Git |
 |---|---|---|
-| `store_anomaly_rf.joblib` | Random Forest (17 Class, 0.6 MB) | 포함 |
-| `rf_feature_columns.json` | 입력 1,200개 Feature 이름·순서 | 포함 |
-| `rf_training_info.json` | Class 이름, 30단계, Frame Feature 40개, Pose 설정, 평가 수치 | 포함 |
+| `action_model.joblib` | ExtraTrees 1000그루 (17 Class, 8.7 MB) | 포함 |
+| `feature_columns.json` | 입력 2,560개 Feature 이름·순서 | 포함 |
+| `training_info.json` | Class 이름, 30단계, Frame Feature 40개, 덧붙인 Feature 종류, Pose 설정, 평가 수치 | 포함 |
 | `yolo11n-pose.pt` | YOLO Pose 가중치 (Ultralytics) | 제외 — Docker 빌드 때 자동으로 받음 |
 
 모델을 다시 만들려면 데이터 저장소에서 `scripts/15_export_service_model.py` 를 실행하고 위 세 파일을 복사합니다.
@@ -203,7 +209,7 @@ sequenceDiagram
 
 ## 6. 사용한 모델과 입력 형식
 
-**왜 Joblib 하나로는 영상을 분류할 수 없나** — Random Forest 는 숫자 1,200개를 받는 분류기일 뿐입니다.
+**왜 Joblib 하나로는 영상을 분류할 수 없나** — 분류 모델(ExtraTrees)은 숫자 2,560개를 받는 분류기일 뿐입니다.
 영상에서 사람을 찾고(YOLO Pose), 사람을 이어 붙이고(ByteTrack), 학습 때와 **같은 계산·같은 순서**로 숫자를 만드는 과정이 앞에 있어야 합니다.
 
 | 단계 | 내용 |
@@ -212,9 +218,10 @@ sequenceDiagram
 | 추적 | ByteTrack — 사람마다 `track_id` |
 | Frame Feature 40개 (`body40`) | 몸 크기 정규화 17관절 x,y (34) + 팔꿈치·무릎 각도 4 + 골반 화면 위치 2 |
 | 유효 Frame | Pose 성공 · 정규화 성공 · 40개 값이 모두 숫자 (학습 때 규칙 그대로) |
-| Sequence | 유효 Frame 을 시간 0~1 로 펴서 30단계로 보간 → 30 × 40 = **1,200** |
+| Sequence | 유효 Frame 을 시간 0~1 로 펴서 30단계로 보간 → 30 × 40 = 1,200 |
+| 덧붙인 Feature | 단계 사이 변화량 29 × 40 = 1,160 + Feature 마다 30단계의 평균·표준편차·최솟값·최댓값·범위 5 × 40 = 200 → 합계 **2,560** (`src/sequence_extras.py`, 학습 쪽과 같은 파일) |
 | 창(Window) | 사람이 보인 시간이 8초 이하면 전체가 창 1개, 더 길면 8초 창을 4초씩 밀며 확률 평균 |
-| 모델 | Random Forest 300그루, class_weight balanced, 17 Class |
+| 모델 | ExtraTrees(Extremely Randomized Trees) 1000그루, class_weight balanced, 17 Class — Random Forest 와 같은 나무 모음 방식에서 나누는 기준을 무작위로 뽑는 변형 |
 
 - **학습 데이터 (2026-11-24 갱신)**: 3팀 5명 × 17동작 × **정면·측면·뒷모습** = 255개 영상 (RGB) + 학습 때만 **좌우 반전** 복사본을 더함.
   평가는 사람 단위로 나눠 Train S01~S03 → Validation S04 / Test S05(다른 날 따로 촬영). 서비스용은 5명 전부로 다시 학습했습니다.
@@ -222,13 +229,21 @@ sequenceDiagram
   | 서비스 모델 | Validation S04 | Test S05 | Test 정면 / 측면 / 뒤 |
   |---|---|---|---|
   | 11/22 정면·측면 170개 | 73.5% | 61.8% | — (뒷모습 평가 없음) |
-  | **11/24 정면·측면·뒤 255개 + 좌우 반전 (현재)** | 68.6% | **74.5%** | 76.5% / 76.5% / 70.6% |
+  | 11/24 오전: 정면·측면·뒤 255개 + 좌우 반전 (RF) | 68.6% | 74.5% | 76.5% / 76.5% / 70.6% |
+  | **11/24 오후: + 변화량·요약 통계, ExtraTrees (현재)** | **88.2%** | **78.4%** | 88.2% / 76.5% / 70.6% |
 
 - **뒷모습을 넣은 이유**: 매장 카메라는 사람을 뒤에서도 봅니다. 11/23 5명이 뒷모습을 다시 찍어 확인해 보니,
   정면·측면으로만 배운 모델은 뒷모습을 **37%** 만 맞혔습니다 (LOSO: 한 명씩 빼고 학습해 그 사람으로 평가, whole 창).
   뒷모습을 학습에 넣고 좌우 반전을 더하니 뒷모습 **68%**, 정면·측면도 76.7% → **78.4%** 로 함께 올랐습니다.
   Validation S04 는 73.5 → 68.6% 로 내려갔지만 한 사람 51개 영상이라 변동이 크고(측면 58.8%), 5명을 돌아가며 본 LOSO 와
   다른 날 찍은 Test 가 모두 올라서 새 모델을 씁니다. 실험 전체는 데이터 저장소 `docs/BASELINE_EVALUATION.md` 5-2절.
+- **Feature·모델을 바꾼 이유 (19번 실험)**: 영상 전체를 30단계로 펴면 같은 동작도 사람마다 시작 시점이 달라, 같은 단계 번호에 다른 자세가 옵니다.
+  단계 번호와 상관없는 요약값(평균·최댓값 등)과 움직임(변화량)을 더하고, RF·ExtraTrees·SVM 을 비교했습니다.
+  고르는 기준은 **S01~S04 사람 단위 4-fold** 만 쓰고(Test S05 는 고른 뒤 확인만), 난수 3개 평균으로
+  지금 RF 71.9% → ExtraTrees + 변화량·요약 통계 **82.4%** (가장 낮은 사람도 74.5%). 5명 LOSO 75.7 → 83.5%, 뒷모습 71.8 → 76.5%.
+  LogisticRegression(63%)·SVM(73~77%)·골반 위치 빼기(-pos)는 더 낮았습니다. 결과 표: 데이터 저장소 `reports/tables/model_improvement_*.csv`.
+- **Confidence 기준 30% 를 그대로 둔 이유**: 학습에 없던 사람(Validation·Test)에서 새 모델의 정답 평균 확률 0.37~0.40, 오답 0.28~0.29 로
+  예전 RF 와 비슷했고, 30% 이상만 보면 정확도 89~93% 입니다. 학습에 들어간 영상은 90% 가까이 나오므로 시연 숫자를 정확도로 읽으면 안 됩니다.
 - **창을 `whole`(영상 전체)로 고른 이유**: 서비스로 들어오는 영상에는 사람이 표시한 '동작 구간'이 없습니다.
   구간(segment) 모델이 Validation 76.5% 로 조금 높지만 차이가 난수 변동(±4%p) 안이라, 입력 모양이 서비스와 같은 whole 모델을 씁니다.
 - **입력 영상**: mp4·mov·avi·mkv·webm, 100 MB 이하, 처음 60초까지. 60fps 는 30fps 로 줄여 처리.
@@ -260,12 +275,12 @@ FastAPI `POST /predict/video` 응답 (발췌):
 
 ## 7. 실행 결과와 검증
 
-**정상 분석** — 입력: 사용자 본인(S04)이 촬영한 `A05 양손으로 밀치기` 정면 영상 2.8초 → 예측 A05, Confidence 69%, 일치 (11/24 새 모델).
+**정상 분석** — 입력: 사용자 본인(S04)이 촬영한 `A05 양손으로 밀치기` 정면 영상 2.8초 → 예측 A05, Confidence 90%, 일치 (11/24 오후 모델).
 (이 영상은 서비스용 모델 학습에도 들어간 영상이라 정확도 근거가 아니라 **흐름 확인용**입니다. 정확도는 6번의 사람 단위 평가 수치를 봅니다.)
 
 ![정상 분석 결과](docs/images/screen_result_success.png)
 
-**두 사람 (T04)** — 입력: 8일차 SBU 악수 영상(2명) → 한 작업에 Track 1·2 결과가 따로 저장. 학습하지 않은 동작이라 둘 다 Confidence 20% 아래로 `판단 불확실`.
+**두 사람 (T04)** — 입력: 8일차 SBU 악수 영상(2명) → 한 작업에 Track 1·2 결과가 따로 저장. 학습하지 않은 동작이라 둘 다 Confidence 30% 아래(17%·28%)로 `판단 불확실`.
 
 ![두 사람 결과](docs/images/screen_result_two_people.png)
 
@@ -289,8 +304,8 @@ FastAPI `POST /predict/video` 응답 (발췌):
 
 | 테스트 | 확인 방법 | 결과 |
 |---|---|---|
-| T01 모델 불러오기 | `GET /health` — 3개 파일 교차 확인(입력 수·Feature 순서·Class) | 17 Class · 1,200 Feature · ready |
-| T02 영상 업로드 | `scripts/e2e_check.py` (Docker, 세션 로그인 → API) | PENDING → STARTED → SUCCESS. 11/24 새 모델로 정면 A05·뒷모습 A01·A11·A16 4개 모두 예측 일치 |
+| T01 모델 불러오기 | `GET /health` — 3개 파일 교차 확인(입력 수·Feature 순서·Class) | ExtraTreesClassifier · 17 Class · 2,560 Feature · ready |
+| T02 영상 업로드 | `scripts/e2e_check.py` (Docker, 세션 로그인 → API) | PENDING → STARTED → SUCCESS. 11/24 오후 모델로 정면 A05·뒷모습 A01·A11·A16·A12 5개 모두 예측 일치 (학습에 들어간 영상이라 흐름 확인용) |
 | T03 IP Webcam | ① 가짜 카메라: Worker 컨테이너 안에서 MJPEG `/video` 로 S04 영상을 반복 송출, `IPWEBCAM_CAMERAS` 에 임시 등록 ② 휴대폰 IP Webcam 앱 | ① 202(0.1초) → 8.0초 MP4 저장 → SUCCESS, 허용 목록 밖 이름은 400. 예측은 짧은 영상을 되풀이한 입력이라 `판단 불확실`(A02 24%) ② 발표 시연 때 확인 |
 | T04 사람별 결과 | SBU 2인 영상 2개 | 작업 1건에 Track 1·2 각각 저장 |
 | T05 비동기 | 업로드 POST 응답 시간 | 0.02~0.5초에 202 + 작업 ID (분석은 9~22초 뒤 완료) |
@@ -298,6 +313,7 @@ FastAPI `POST /predict/video` 응답 (발췌):
 | T07 CRUD 권한 | 회원 B 가 A 의 작업 조회/수정/삭제 | 404 / 404 / 404, B 목록 0건. A 의 PATCH 는 제목·메모만, PUT 405 |
 | T08 관리자 | admin 으로 `/dashboard/`, 일반 회원 | 200 / 관리자 로그인으로 이동 |
 | T09 예외 처리 | 손상 파일, `.txt`, 허용 안 된 카메라 URL, Redis·AI 서버 끊김 | FAILURE + 사유 / 400 (DB 저장 전 거절) |
+| T09 추가 (11/24) | 휴대폰 앱이 꺼진 상태로 IP Webcam 요청 · 사람 없는 4초 영상 · 사람이 0.25초만 나온 영상 · Worker 를 멈춘 채 요청 | FAILURE "카메라 'phone'에 연결하지 못했습니다…"(5초) · SUCCESS + "영상에서 사람을 찾지 못했습니다" · SUCCESS + "판단하지 못했습니다: 화면에 0.2초만 보여…" · 10초 동안 PENDING 유지 → Worker 재시작 뒤 SUCCESS |
 | T10 Docker 재시작 | `docker compose down` → `up` | 작업 3건·예측 2건 그대로, 재시작 뒤 새 분석 성공 |
 
 Django 단위 테스트 18개(`backend/accounts/tests.py`, `backend/analyses/tests.py`)는 AI 서버와 카메라를 가짜로 바꿔 위 흐름을 확인합니다.
@@ -333,7 +349,7 @@ store-anomaly-service/
 
 ## 한계
 
-- 학습 데이터가 5명·한 장소라, 다른 사람·다른 카메라 높이·다른 조명에서는 틀릴 수 있습니다 (Test S05 74.5%, 뒷모습은 70.6%).
+- 학습 데이터가 5명·한 장소라, 다른 사람·다른 카메라 높이·다른 조명에서는 틀릴 수 있습니다 (Test S05 78.4%, 뒷모습은 70.6%).
   뒷모습에서는 A12 무릎 꿇고 꺼내기·A06 도구 휘두르기·A13 테이블 내려치기처럼 손이 몸에 가려지는 동작이 특히 약합니다 (LOSO 27~40%).
   틀리면 **입력 품질(관절 Conf·유효 Frame) → Pose → Feature → 창 → 모델** 순서로 원인을 봅니다. 결과 표에 입력 품질을 함께 보여 주는 이유입니다.
 - 골반 화면 위치(`hip_x_img`, `hip_y_img`)를 Feature 로 쓰므로, 학습 때와 다른 화면 구도(가로/세로, 카메라 위치)에 약합니다.

@@ -1,9 +1,9 @@
 {
   "description": "AI 추론 서버 설정. 학습 쪽(unmanned-store-anomaly configs/project.json)과 같은 Pose 값을 쓴다.",
   "pose_model": "models/yolo11n-pose.pt",
-  "rf_model": "models/store_anomaly_rf.joblib",
-  "feature_columns": "models/rf_feature_columns.json",
-  "training_info": "models/rf_training_info.json",
+  "model": "models/action_model.joblib",
+  "feature_columns": "models/feature_columns.json",
+  "training_info": "models/training_info.json",
   "tracker": "bytetrack.yaml",
   "image_size": 640,
   "person_confidence": 0.25,
