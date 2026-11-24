@@ -5,12 +5,6 @@
 
 > 데이터·모델 쪽 작업(촬영 정리, Pose 추출, QA, 학습·평가)은 [unmanned-store-anomaly](https://github.com/wlgptjd333/unmanned-store-anomaly) 저장소에 있고,
 > 이 저장소는 그 모델을 **웹 서비스로 연결하는 부분**만 담습니다. (데이터는 3팀 공동, 서비스는 개인 프로젝트)
->
-> **안내서의 "기존 6개 Action 모델"과 다른 이유** — 안내서 기본은 6일차 6동작 Random Forest(1,140 Feature)입니다.
-> 강사님 안내(11/23)에 따라 제출판은 **3팀이 직접 찍은 17동작 데이터 모델**을 씁니다. 이 서비스 저장소 안에서는 모델을 학습하지 않고,
-> 학습은 데이터 저장소에서 따로 한 결과 파일 3개만 가져옵니다(6장).
-> 6일차 모델을 그대로 붙인 **6동작 버전**(T01: 6 Class · 1,140 Feature)은
-> [vision-ai-lab/…/vision_action_platform](https://github.com/wlgptjd333/vision-ai-lab/tree/main/subject10_pose_action/vision_action_platform) 에 있고, 웹 구조는 같습니다.
 
 ## 1. 프로젝트 소개
 
@@ -340,7 +334,7 @@ store-anomaly-service/
 │   └── Dockerfile
 ├── ai_service/             FastAPI
 │   ├── main.py routers/ services/
-│   ├── src/                3팀 저장소에서 복사: pose_utils · feature_utils · team_feature_utils
+│   ├── src/                데이터 저장소(unmanned-store-anomaly)에서 복사: pose_utils · feature_utils · team_feature_utils
 │   ├── models/             Joblib · Feature 순서 · 학습 정보
 │   └── Dockerfile
 ├── scripts/                e2e_check.py (Docker 통합 확인) · capture_screens.py (README 캡처)
