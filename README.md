@@ -61,7 +61,9 @@ docker compose exec django python manage.py createsuperuser
 | `training_info.json` | Class 이름, 30단계, Frame Feature 40개, 덧붙인 Feature 종류, Pose 설정, 평가 수치 | 포함 |
 | `yolo11n-pose.pt` | YOLO Pose 가중치 (Ultralytics) | 제외 — Docker 빌드 때 자동으로 받음 |
 
-모델을 다시 만들려면 데이터 저장소에서 `scripts/15_export_service_model.py` 를 실행하고 위 세 파일을 복사합니다.
+모델을 다시 만들려면 데이터 저장소에서 `scripts/15_export_service_model.py` 를 실행한 뒤 `bash scripts/update_model.sh [데이터 저장소 경로] [확인용 영상]` —
+세 파일 복사, Feature 코드가 두 저장소에서 같은지 확인, Pose 모델 일치 확인, fastapi 다시 빌드(모델이 이미지 안에 들어감), `/health`·E2E 확인까지 합니다.
+영상 추가부터 전체 순서는 데이터 저장소 [Runbook](https://github.com/wlgptjd333/unmanned-store-anomaly/blob/main/docs/RETRAIN_RUNBOOK.md).
 
 로컬(도커 없이) 테스트: `cd backend && pip install -r requirements.txt && python manage.py test` (SQLite·가짜 AI 서버로 18개).
 
@@ -75,7 +77,7 @@ flowchart TB
         D["django<br/>Django + DRF<br/>(gunicorn :8000)"]
         R[("redis<br/>작업 대기열")]
         C["celery<br/>Celery Worker"]
-        F["fastapi<br/>AI 추론 :8001<br/>YOLO Pose + ByteTrack + RF"]
+        F["fastapi<br/>AI 추론 :8001<br/>YOLO Pose + ByteTrack + ExtraTrees"]
         P[("postgres<br/>auth_user · AnalysisJob<br/>PersonPrediction")]
         M[/"media 볼륨<br/>업로드·수집 영상"/]
     end
@@ -184,7 +186,7 @@ sequenceDiagram
         T->>T: camera_capture.py 8초 수집 → MP4 저장
     end
     T->>F: services.py: POST /predict/video (영상 파일)
-    F->>F: YOLO Pose + ByteTrack → 사람별 40값/Frame → 30단계 → RF
+    F->>F: YOLO Pose + ByteTrack → 사람별 40값/Frame → 30단계 + 변화량·요약 통계 → ExtraTrees
     F-->>T: {predictions: [track_id, action, confidence …]}
     T->>DB: PersonPrediction 저장 + SUCCESS (실패 시 FAILURE + 사유)
     JS->>V: GET /api/analyses/{id}/
@@ -197,8 +199,8 @@ sequenceDiagram
 | 요청 접수·권한·작업 등록 | `backend/analyses/views.py`, `serializers.py`, `permissions.py` |
 | 백그라운드 처리 | `backend/analyses/tasks.py`, `camera_capture.py`, `services.py` |
 | 추론 API | `ai_service/main.py`, `routers/predictions.py` |
-| 영상 → 사람별 Feature | `ai_service/services/pose_pipeline.py` (+ `src/` 의 3팀 Feature 코드) |
-| 모델 로드·예측 | `ai_service/services/model_loader.py`, `action_inference.py` |
+| 영상 → 사람별 Feature | `ai_service/services/pose_pipeline.py` (+ `src/` 의 Feature 코드, 데이터 저장소에서 복사) |
+| 모델 로드·예측 | `ai_service/services/model_loader.py`, `action_inference.py`, `src/sequence_extras.py` |
 | 대시보드 집계·차트 | `backend/analyses/page_views.py`, `backend/static/js/dashboard.js` |
 
 ## 6. 사용한 모델과 입력 형식
@@ -300,7 +302,7 @@ FastAPI `POST /predict/video` 응답 형식 (발췌, 11/23 첫 모델 때 받은
 |---|---|---|
 | T01 모델 불러오기 | `GET /health` — 3개 파일 교차 확인(입력 수·Feature 순서·Class) | ExtraTreesClassifier · 17 Class · 2,560 Feature · ready |
 | T02 영상 업로드 | `scripts/e2e_check.py` (Docker, 세션 로그인 → API) | PENDING → STARTED → SUCCESS. 11/24 오후 모델로 정면 A05·뒷모습 A01·A11·A16·A12 5개 모두 예측 일치 (학습에 들어간 영상이라 흐름 확인용) |
-| T03 IP Webcam | ① 가짜 카메라: Worker 컨테이너 안에서 MJPEG `/video` 로 S04 영상을 반복 송출, `IPWEBCAM_CAMERAS` 에 임시 등록 ② 휴대폰 IP Webcam 앱 | ① 202(0.1초) → 8.0초 MP4 저장 → SUCCESS, 허용 목록 밖 이름은 400. 예측은 짧은 영상을 되풀이한 입력이라 `판단 불확실`(A02 24%) ② 발표 시연 때 확인 |
+| T03 IP Webcam | ① 가짜 카메라: Worker 컨테이너 안에서 MJPEG `/video` 로 S04 영상을 반복 송출, `IPWEBCAM_CAMERAS` 에 임시 등록 ② 휴대폰 IP Webcam 앱 | ① 202(0.1초) → 8.0초 MP4 저장 → SUCCESS, 허용 목록 밖 이름은 400. 예측은 짧은 영상을 되풀이한 입력이라 `판단 불확실`(A02 24%) ② 실제 휴대폰으로 확인 예정 |
 | T04 사람별 결과 | SBU 2인 영상 2개 | 작업 1건에 Track 1·2 각각 저장 |
 | T05 비동기 | 업로드 POST 응답 시간 | 0.02~0.5초에 202 + 작업 ID (분석은 9~22초 뒤 완료) |
 | T06 영구 저장 | 새로고침·상세 재조회 | 같은 결과 |
@@ -308,7 +310,7 @@ FastAPI `POST /predict/video` 응답 형식 (발췌, 11/23 첫 모델 때 받은
 | T08 관리자 | admin 으로 `/dashboard/`, 일반 회원 | 200 / 관리자 로그인으로 이동 |
 | T09 예외 처리 | 손상 파일, `.txt`, 허용 안 된 카메라 URL, Redis·AI 서버 끊김 | FAILURE + 사유 / 400 (DB 저장 전 거절) |
 | T09 추가 (11/24) | 휴대폰 앱이 꺼진 상태로 IP Webcam 요청 · 사람 없는 4초 영상 · 사람이 0.25초만 나온 영상 · Worker 를 멈춘 채 요청 | FAILURE "카메라 'phone'에 연결하지 못했습니다…"(5초) · SUCCESS + "영상에서 사람을 찾지 못했습니다" · SUCCESS + "판단하지 못했습니다: 화면에 0.2초만 보여…" · 10초 동안 PENDING 유지 → Worker 재시작 뒤 SUCCESS |
-| T10 Docker 재시작 | `docker compose down` → `up` | 작업 3건·예측 2건 그대로, 재시작 뒤 새 분석 성공 |
+| T10 Docker 재시작 | `docker compose down` → `up` (11/24 ExtraTrees 모델로 다시) | 작업 32건·사람별 예측 24건·상태별 건수 그대로, 재시작 뒤 새 분석(A09 엎드려 휴대폰 보기) SUCCESS·일치 |
 
 Django 단위 테스트 18개(`backend/accounts/tests.py`, `backend/analyses/tests.py`)는 AI 서버와 카메라를 가짜로 바꿔 위 흐름을 확인합니다.
 
@@ -334,17 +336,18 @@ store-anomaly-service/
 │   └── Dockerfile
 ├── ai_service/             FastAPI
 │   ├── main.py routers/ services/
-│   ├── src/                데이터 저장소(unmanned-store-anomaly)에서 복사: pose_utils · feature_utils · team_feature_utils
+│   ├── src/                데이터 저장소(unmanned-store-anomaly)에서 복사: pose_utils · feature_utils · team_feature_utils · sequence_extras
 │   ├── models/             Joblib · Feature 순서 · 학습 정보
 │   └── Dockerfile
-├── scripts/                e2e_check.py (Docker 통합 확인) · capture_screens.py (README 캡처)
+├── scripts/                e2e_check.py (Docker 통합 확인) · capture_screens.py (README 캡처) · update_model.sh (모델 교체)
 └── docs/images/            README 캡처 (얼굴·비밀번호·카메라 주소 없음)
 ```
 
 ## 한계
 
 - 학습 데이터가 5명·한 장소라, 다른 사람·다른 카메라 높이·다른 조명에서는 틀릴 수 있습니다 (Test S05 78.4%, 뒷모습은 70.6%).
-  뒷모습에서는 A12 무릎 꿇고 꺼내기·A06 도구 휘두르기·A13 테이블 내려치기처럼 손이 몸에 가려지는 동작이 특히 약합니다 (LOSO 27~40%).
+  5명 LOSO(지금 모델, 난수 3개)에서 약한 동작: A13 테이블 내려치기(뒤 20% · 정면 53% · 측면 53%), A15 벽에 기대어 잠들기(뒤 40%),
+  A06 도구 휘두르기(측면 40% · 정면 60%), A04 뽑기 기계 흔들기(측면 47% · 뒤 60%) — 서서 팔만 움직이는 동작끼리 헷갈립니다.
   틀리면 **입력 품질(관절 Conf·유효 Frame) → Pose → Feature → 창 → 모델** 순서로 원인을 봅니다. 결과 표에 입력 품질을 함께 보여 주는 이유입니다.
 - 골반 화면 위치(`hip_x_img`, `hip_y_img`)를 Feature 로 쓰므로, 학습 때와 다른 화면 구도(가로/세로, 카메라 위치)에 약합니다.
 - 17개 중 하나를 반드시 고르는 구조라 "정상 행동"을 따로 판정하지 못합니다. Confidence 기준(30%)은 Validation 평균 최고 확률(약 39%)을 보고 정한 값입니다.
