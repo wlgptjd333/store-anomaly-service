@@ -15,11 +15,19 @@
        rf_feature_columns.json       1,200개 Feature 이름·순서 (t00_bn_nose_x …)
        rf_training_info.json         Class·이름·단계 수·Frame Feature·창 길이·평가 수치
 
-실행: .venv/bin/python scripts/15_export_service_model.py
+2026-11-24 갱신 — 정면·측면·뒤 + 좌우 반전 (18번 실험 결과)
+  - 뒷모습 85개(11/23 재촬영)를 넣으면 LOSO 뒷모습 37% → 68%, 정면·측면도 76.7% → 78.4% (whole 창).
+  - 좌우 반전 복사본은 학습 데이터에만 더한다 (평가는 원본).
+  - 예전 모델(정면·측면 170개, 반전 없음)은 --views FS --no-flip 으로 다시 만들 수 있다.
+
+실행: .venv/bin/python scripts/15_export_service_model.py              # 정면·측면·뒤 + 반전 (기본)
+      .venv/bin/python scripts/15_export_service_model.py --views FS --no-flip   # 11/22 모델
 """
 from __future__ import annotations
 
+import argparse
 import csv
+import importlib.util
 import json
 from datetime import datetime
 from pathlib import Path
@@ -46,6 +54,24 @@ ANGLES = ["left_elbow_angle", "right_elbow_angle", "left_knee_angle", "right_kne
 POS = ["hip_x_img", "hip_y_img"]
 FRAME_FEATURES = [f"bn_{k}_{a}" for k in KP for a in "xy"] + ANGLES + POS  # body40
 COLUMNS = [f"t{i:02d}_{f}" for i in range(STEPS) for f in FRAME_FEATURES]
+VIEW_NAMES = {"F": "front", "S": "side", "B": "back"}
+
+_spec = importlib.util.spec_from_file_location("t17", ROOT / "scripts" / "17_flip_and_view_check.py")
+t17 = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(t17)
+
+
+def parse_args():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--views", default="FSB", help="학습에 쓸 방향 (F 정면, S 측면, B 뒤)")
+    ap.add_argument("--no-flip", action="store_true", help="좌우 반전 복사본을 더하지 않음")
+    return ap.parse_args()
+
+
+def train(part: pd.DataFrame, flip: bool) -> RandomForestClassifier:
+    if flip:
+        part = pd.concat([part, t17.flip(part)], ignore_index=True)
+    return make_rf().fit(part[COLUMNS].to_numpy(float), part["action_id"].to_numpy())
 
 
 def make_rf() -> RandomForestClassifier:
@@ -70,25 +96,30 @@ def clip_seconds() -> list[float]:
 
 
 def main() -> None:
+    args = parse_args()
+    views, flip = list(args.views), not args.no_flip
     df = pd.read_csv(DATA)
-    df = df[df.view.isin(["F", "S"])].reset_index(drop=True)  # 서비스 모델은 정면·측면 170개 그대로 (뒷모습은 18번 비교 후 결정)
+    df = df[df.view.isin(views)].reset_index(drop=True)
     acts = {r["action_id"]: r for r in csv.DictReader((ROOT / "configs" / "action_classes.csv").open(encoding="utf-8-sig"))}
-    X, y = df[COLUMNS].to_numpy(float), df["action_id"].to_numpy()
+    y = df["action_id"].to_numpy()
+    X = df[COLUMNS].to_numpy(float)
 
-    # 1) 기록용 평가 (Train S01~S03)
+    # 1) 기록용 평가 (Train S01~S03) — 방향별로도 적음
     tr = df.subject_id.isin(subjects("train")).to_numpy()
-    va = df.subject_id.isin(subjects("validation")).to_numpy()
-    te = df.subject_id.isin(subjects("test")).to_numpy()
-    rf = make_rf().fit(X[tr], y[tr])
+    rf = train(df[tr], flip)
     ev = {}
-    for name, m in (("validation_S04", va), ("test_S05", te)):
+    for name, key in (("validation_S04", "validation"), ("test_S05", "test")):
+        m = df.subject_id.isin(subjects(key)).to_numpy()
         p = rf.predict(X[m])
         ev[name] = {"accuracy": round(float(accuracy_score(y[m], p)), 4),
                     "macro_f1": round(float(f1_score(y[m], p, average="macro")), 4), "clips": int(m.sum())}
+        for v in views:
+            mv = (df.view.to_numpy()[m] == v)
+            ev[name][f"accuracy_{VIEW_NAMES[v]}"] = round(float(accuracy_score(y[m][mv], p[mv])), 4)
     print("평가 (Train S01~S03):", ev)
 
     # 2) 서비스용: 5명 전부
-    final = make_rf().fit(X, y)
+    final = train(df, flip)
     secs = clip_seconds()
 
     OUT.mkdir(parents=True, exist_ok=True)
@@ -113,7 +144,9 @@ def main() -> None:
         "body_scale": {"shoulder_ratio": 0.70, "min_px": 5.0},
         "train_clip_seconds": {"min": round(min(secs), 2), "median": round(float(np.median(secs)), 2),
                                "max": round(max(secs), 2)},
-        "trained_on": "S01~S05 (170 clips, 17 actions x 2 views x 5 people)",
+        "trained_on": f"S01~S05 ({len(df)} clips, 17 actions x {len(views)} views x 5 people)",
+        "views": [VIEW_NAMES[v] for v in views],
+        "flip_augmentation": flip,
         "evaluation_train_S01_S03": ev,
         "sklearn_version": sklearn.__version__,
         "created_at": datetime.now().isoformat(timespec="seconds"),

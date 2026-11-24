@@ -100,7 +100,7 @@ Sequence CSV (clip 하나 = 파일 하나, 159열)
 | `scripts/12_compare_normalizations.py` | 정규화 5가지 비교 (서 있는 자세 크기 차이, 측면 튐, 사람 단위 5-fold 분류) |
 | `scripts/13_build_sequence_dataset.py` | 입력 점검 + 동작 구간을 30단계로 보간한 고정 길이 Dataset → `reports/dataset/` |
 | `scripts/14_train_baseline.py` | Random Forest 실험 9개 (한 번에 하나씩 바꿈), 혼동 행렬, 틀린 영상, 마지막 Test S05 |
-| `scripts/15_export_service_model.py` | 웹 서비스용 모델 (5명 전부 학습) → `artifacts/service/` |
+| `scripts/15_export_service_model.py` | 웹 서비스용 모델 (5명 전부, 기본 정면·측면·뒤 + 좌우 반전) → `artifacts/service/` |
 | `scripts/16_export_unified_labels.py` | 팀 통일 라벨로 산출물 다시 쓰기 + 같은 결과인지 재학습 확인 → `reports/unified/` |
 | `scripts/17_flip_and_view_check.py` | 좌우 반전 증강 전/후, 학습에 없던 촬영 각도 정확도 → `flip_augmentation.csv`, `view_generalization.csv` |
 | `scripts/18_back_view_experiments.py` | 뒷모습을 학습에 넣었을 때 (정면·측면·뒤 따로, 좌우 반전, 얼굴 관절 빼기, 동작별) → `back_view_*.csv`, `docs/images/back_view_summary.png` |
@@ -187,7 +187,7 @@ python scripts/07_render_overlay.py --subject S04   # YOLO 다시 안 돌림, �
 - [ ] 동작 구간 끝 사람 확인 (누운 동작)
 - [x] 뒷모습 85개 촬영·학습 (11/23) — 뒤 39% → 73%, 정면·측면 유지
 - [ ] 뒷모습 85개 사람이 영상으로 라벨 확인 (지금은 자동 QA + 모델 예측 + 8개 직접 확인)
-- [ ] 발표 뒤 웹 서비스 모델을 "정면·측면·뒤 + 좌우 반전"으로 다시 내보내기
+- [x] 웹 서비스 모델을 "정면·측면·뒤 + 좌우 반전"으로 다시 내보내기 (11/24, Test S05 61.8% → 74.5%)
 - [ ] 대각선(45°) 촬영
 
 ## 출처
