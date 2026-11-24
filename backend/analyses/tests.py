@@ -24,7 +24,7 @@ def fake_result(n_people=2):
     preds = [{"track_id": i + 1, "action_id": aid, "action_label": label, "action_name_ko": "x", "confidence": conf,
               "uncertain": conf < 0.3, "window_count": 1, "valid_frames": 150, "track_seconds": 5.0,
               "mean_keypoint_conf": 0.9, "top3": [{"action_id": aid, "probability": conf}], "windows": []}
-             for i, (aid, label, conf) in enumerate([("A01", "kiosk_slam", 0.77), ("A14", "repeated_vomiting", 0.25)][:n_people])]
+             for i, (aid, label, conf) in enumerate([("A001", "kiosk_tap", 0.77), ("A014", "vomit", 0.25)][:n_people])]
     return {"ok": True, "message": "" if preds else "영상에서 사람을 찾지 못했습니다.",
             "video": {"seconds": 5.2, "frames": 156}, "processing_seconds": 3.1, "predictions": preds}
 
@@ -60,7 +60,7 @@ class AnalysisApiTests(TestCase):
 
     # T02·T05: 업로드 → 작업 ID 즉시 반환(202) → Worker 가 결과 저장
     def test_upload_returns_job_id_and_saves_result(self):
-        r, pv = self.create({"input_type": "UPLOAD", "video": video_file(), "expected_action": "A01"})
+        r, pv = self.create({"input_type": "UPLOAD", "video": video_file(), "expected_action": "A001"})
         self.assertEqual(r.status_code, 202)
         self.assertIn("task_id", r.data)
         job = AnalysisJob.objects.get(pk=r.data["id"])
@@ -73,7 +73,7 @@ class AnalysisApiTests(TestCase):
     def test_two_people_saved_separately(self):
         r, _ = self.create({"input_type": "UPLOAD", "video": video_file()})
         job = AnalysisJob.objects.get(pk=r.data["id"])
-        self.assertEqual(list(job.predictions.values_list("track_id", "action_id")), [(1, "A01"), (2, "A14")])
+        self.assertEqual(list(job.predictions.values_list("track_id", "action_id")), [(1, "A001"), (2, "A014")])
         self.assertTrue(job.predictions.get(track_id=2).uncertain)
 
     # T06: 새로 조회해도(새로고침) 같은 결과
@@ -166,7 +166,7 @@ class DashboardTests(TestCase):
         self.user = User.objects.create_user("normal", password="pw-normal-123")
         job = AnalysisJob.objects.create(user=self.user, input_type="UPLOAD", status="SUCCESS")
         AnalysisJob.objects.create(user=self.user, input_type="IPWEBCAM", status="FAILURE")
-        PersonPrediction.objects.create(job=job, track_id=1, action_id="A05", action_label="two_hand_shove",
+        PersonPrediction.objects.create(job=job, track_id=1, action_id="A005", action_label="push",
                                         confidence=0.6, window_count=1)
 
     # T08: 관리자만 /dashboard/, 차트 2개용 ORM 집계
@@ -179,7 +179,7 @@ class DashboardTests(TestCase):
         self.assertEqual(r.status_code, 200)
         data = r.context["chart_data"]
         self.assertEqual(len(data["actions"]), 17)
-        self.assertEqual(next(a["count"] for a in data["actions"] if a["id"] == "A05"), 1)
+        self.assertEqual(next(a["count"] for a in data["actions"] if a["id"] == "A005"), 1)
         self.assertEqual({s["status"]: s["count"] for s in data["statuses"]},
                          {"PENDING": 0, "STARTED": 0, "SUCCESS": 1, "FAILURE": 1})
 
@@ -308,7 +308,7 @@ class LiveSaveTests(TestCase):
         self.api.force_authenticate(self.user)
 
     def state(self, conf=0.62, streak=4.0, streak_min=0.55, running=True):
-        person = {"track_id": 3, "status": "ok", "action_id": "A03", "action_name_ko": "냉동고 앞차기",
+        person = {"track_id": 3, "status": "ok", "action_id": "A003", "action_name_ko": "앞차기",
                   "confidence": conf, "uncertain": conf < 0.3, "streak_seconds": streak,
                   "streak_min_confidence": streak_min}
         return {"camera": "phone", "state": "running" if running else "stopped", "people": [person]}
@@ -325,13 +325,13 @@ class LiveSaveTests(TestCase):
         return r, clip, pv, cap
 
     def test_manual_save_uses_live_clip_not_new_capture(self):
-        r, clip, pv, cap = self.save({"expected_action": "A03", "title": "정면"}, self.state(conf=0.2, streak=0))
+        r, clip, pv, cap = self.save({"expected_action": "A003", "title": "정면"}, self.state(conf=0.2, streak=0))
         self.assertEqual(r.status_code, 202)
         job = AnalysisJob.objects.get(pk=r.data["id"])
         self.assertEqual((job.input_type, job.source, job.status, job.expected_action, job.title),
-                         ("IPWEBCAM", "LIVE", "SUCCESS", "A03", "정면"))
+                         ("IPWEBCAM", "LIVE", "SUCCESS", "A003", "정면"))
         self.assertTrue(job.video.name.endswith(".mp4"))
-        self.assertEqual(job.live_snapshot[0]["action_id"], "A03")
+        self.assertEqual(job.live_snapshot[0]["action_id"], "A003")
         cap.assert_not_called()                        # 이미 들고 온 영상 → 다시 녹화하지 않음
         pv.assert_called_once()
         clip.assert_called_once_with(self.SID, 8.0)
@@ -348,7 +348,7 @@ class LiveSaveTests(TestCase):
         self.assertEqual(r.status_code, 202)
         job = AnalysisJob.objects.get(pk=r.data["id"])
         self.assertEqual(job.source, "LIVE_AUTO")
-        self.assertIn("자동 감지 A03", job.title)
+        self.assertIn("자동 감지 A003", job.title)
 
     def test_auto_save_cooldown_and_stopped_session(self):
         self.assertEqual(self.save({"auto": True}, self.state())[0].status_code, 202)

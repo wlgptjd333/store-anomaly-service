@@ -67,8 +67,10 @@ def main() -> None:
     ids = []
     for p in sys.argv[1:]:
         name = Path(p).stem
-        part = name.split("_")[2] if name.count("_") >= 3 else ""      # T03_S04_A05_T01_F → A05
-        expected = part if len(part) == 3 and part[0] == "A" and part[1:].isdigit() else ""
+        # 데이터 저장소 이름 T03_S04_A05_T01_F → A05 → 통일 번호 A005, 팀 통일 이름 S04_A005_T01 → A005
+        parts = name.split("_")
+        part = next((x for x in parts if x[:1] == "A" and x[1:].isdigit() and len(x) in (3, 4)), "")
+        expected = f"A{int(part[1:]):03d}" if part else ""
         sub = submit(a, p, expected)
         print(f"[T05] POST {Path(p).name}: HTTP {sub['status_code']} in {sub['seconds']}s → {sub['body']}")
         job = wait(a, sub["body"]["id"])

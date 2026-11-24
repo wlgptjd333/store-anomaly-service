@@ -59,7 +59,7 @@ class AnalysisJob(models.Model):
     # 장면을 저장할 때 실시간 화면이 보여 준 예측 (저장 영상 분석 결과와 비교용)
     live_snapshot = models.JSONField("저장 당시 실시간 예측", default=list, blank=True)
     # 사용자가 '이 동작을 했다'고 고른 값. 검증된 정답이 아니다
-    expected_action = models.CharField("예상 동작(사용자 선택)", max_length=3, choices=ACTION_CHOICES, blank=True)
+    expected_action = models.CharField("예상 동작(사용자 선택)", max_length=4, choices=ACTION_CHOICES, blank=True)
     status = models.CharField("상태", max_length=10, choices=Status.choices, default=Status.PENDING, db_index=True)
     celery_task_id = models.CharField("Celery Task ID", max_length=50, blank=True)
     error_message = models.TextField("오류 사유", blank=True)
@@ -87,7 +87,7 @@ class PersonPrediction(models.Model):
 
     job = models.ForeignKey(AnalysisJob, on_delete=models.CASCADE, related_name="predictions")
     track_id = models.PositiveIntegerField("Track ID")
-    action_id = models.CharField("동작 ID", max_length=3, choices=ACTION_CHOICES, db_index=True)
+    action_id = models.CharField("동작 ID", max_length=4, choices=ACTION_CHOICES, db_index=True)
     action_label = models.CharField("Action Label", max_length=50)
     confidence = models.FloatField("Confidence")
     uncertain = models.BooleanField("판단 불확실", default=False)
