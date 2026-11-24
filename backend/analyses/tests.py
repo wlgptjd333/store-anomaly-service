@@ -3,9 +3,12 @@
 FastAPI 와 카메라는 가짜(mock)로 바꾸고, Celery 작업은 on_commit 콜백을 직접 실행해 같은 흐름을 탄다.
 실제 서버·Docker 를 거친 확인은 README 의 테스트 표에 따로 기록한다.
 """
+import csv
+import io
 import shutil
 import tempfile
 from datetime import timedelta
+from pathlib import Path
 from unittest import mock
 
 from django.contrib.auth.models import User
@@ -576,3 +579,44 @@ class DashboardToolsTests(CleanTestCase):
     def test_csv_staff_only(self):
         self.client.force_login(self.a)
         self.assertEqual(self.client.get("/dashboard/?export=csv").status_code, 302)
+
+
+@override_settings(MEDIA_ROOT=TMP_MEDIA)
+class ExportClipsTests(CleanTestCase):
+    """manage.py export_clips: 원본 복사 + 파일 이름 규칙 + manifest.csv, 조건 거르기."""
+
+    def setUp(self):
+        self.u = User.objects.create_user("exporter", password="pw-E-12345")
+        self.dest = tempfile.mkdtemp()
+        mk = AnalysisJob.objects.create
+        self.cap = mk(user=self.u, input_type="IPWEBCAM", source="CAPTURE", camera_name="phone", status="SUCCESS",
+                      expected_action="A005", video=SimpleUploadedFile("rec.mp4", b"clip-1"))
+        PersonPrediction.objects.create(job=self.cap, track_id=1, action_id="A005", action_label="push",
+                                        confidence=0.8, window_count=1)
+        mk(user=self.u, input_type="IPWEBCAM", source="CAPTURE", status="SUCCESS", video=SimpleUploadedFile("r2.mp4", b"x"))
+        mk(user=self.u, input_type="IPWEBCAM", status="FAILURE", video=SimpleUploadedFile("bad.mp4", b"x"))
+        mk(user=self.u, input_type="UPLOAD", status="SUCCESS", expected_action="A001",
+           video=SimpleUploadedFile("up.mp4", b"x"))
+
+    def tearDown(self):
+        shutil.rmtree(self.dest, ignore_errors=True)
+
+    def run_export(self, *args):
+        from django.core.management import call_command
+        call_command("export_clips", "--dest", self.dest, *args, stdout=io.StringIO())
+        (out,) = list(Path(self.dest).iterdir())
+        with (out / "manifest.csv").open(encoding="utf-8-sig") as f:
+            return out, list(csv.DictReader(f))
+
+    def test_ipwebcam_success_only_by_default(self):
+        out, rows = self.run_export()
+        self.assertEqual([int(r["job_id"]) for r in rows], [self.cap.id, self.cap.id + 1])   # 실패·업로드 제외
+        r = rows[0]
+        self.assertTrue(r["file"].startswith(f"job{self.cap.id:04d}_A005_CAPTURE_"))
+        self.assertEqual((out / r["file"]).read_bytes(), b"clip-1")                            # 원본 그대로
+        self.assertEqual((r["predicted_action"], r["matches_expected"], r["label_checked"]), ("A005", "True", ""))
+        self.assertIn("_NA_", rows[1]["file"])                                                    # 동작 안 고름
+
+    def test_filters(self):
+        _, rows = self.run_export("--source", "all", "--labeled-only")
+        self.assertEqual(sorted(r["expected_action"] for r in rows), ["A001", "A005"])

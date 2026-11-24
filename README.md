@@ -85,6 +85,12 @@ docker compose exec django python manage.py createsuperuser
 로컬(도커 없이) 확인: `bash scripts/check.sh` — 린트(`ruff.toml`) · JS 문법 · Django check · migration 누락 · 단위 테스트 41개(SQLite·가짜 AI 서버).
 GitHub 에서도 push 마다 같은 확인이 돕니다 (`.github/workflows/ci.yml`, 위 check 배지). Docker 안에서는 `docker compose exec django python manage.py test`.
 
+**녹화 영상 꺼내기 (재학습용)**: 분석에 쓴 영상 원본은 Docker 볼륨(`media`) 안에 있어 탐색기로 바로 안 보입니다.
+`docker compose exec django python manage.py export_clips` 를 실행하면 IP Webcam 녹화(장면 저장·자동 감지 포함, 완료된 것)를
+이 저장소 `exports/<시각>/` 로 복사합니다 (Windows 탐색기에서는 `\\wsl.localhost\Ubuntu\...\store-anomaly-service\exports`).
+파일 이름은 `job0042_A003_CAPTURE_20261124_112324.mp4` (작업 번호 · 수행한 동작(NA = 안 고름) · 입력 방식 · 시각), `manifest.csv` 에 AI 예측·Confidence·일치 여부가 들어갑니다.
+`--source all`(업로드 포함) · `--labeled-only` · `--since 2026-11-24` · `--dry-run`. '수행한 동작'은 검수 전 값이라 학습 전에 영상을 보고 `label_checked` 칸을 채웁니다. `exports/` 는 Git 제외 (얼굴이 나올 수 있음).
+
 HTTPS 로 열 때(앞단 프록시가 TLS 처리)는 `.env` 에 `DJANGO_HTTPS=1` — 쿠키 secure · http→https 이동 · HSTS 가 켜지고 `manage.py check --deploy` 경고가 없어집니다.
 내부망 http 시연에서는 0 (켜면 http 에서 로그인 쿠키가 안 보내짐).
 
@@ -455,7 +461,7 @@ store-anomaly-service/
 │   ├── analyses/           models · serializers · views · jobs (작업 등록) · tasks · services · camera_capture · admin
 │   │                       · page_views · dashboard (집계·조건·CSV) · playback (재생용 사본·Range)
 │   │                       · cameras (주소 검사·연결 확인) · live_views (카메라 API·실시간 중계)
-│   │                       · management/commands/make_playback.py (옛 기록 재생용 사본)
+│   │                       · management/commands/make_playback.py (옛 기록 재생용 사본) · export_clips.py (재학습용 영상 꺼내기)
 │   ├── templates/ static/  화면 · analyses.js · dashboard.js · app.css
 │   └── Dockerfile          python:3.12-slim + ffmpeg
 ├── ai_service/             FastAPI

@@ -12,6 +12,9 @@ backend/db.sqlite3
 backend/media/
 backend/staticfiles/
 
+# manage.py export_clips 로 꺼낸 영상·목록 (얼굴이 나올 수 있음)
+exports/
+
 # 영상·사진 (얼굴이 나올 수 있음) — README 그림은 docs/images 에서 골라서만
 *.mp4
 *.mov

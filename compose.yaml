@@ -60,6 +60,7 @@ services:
     environment: *backend-env
     volumes:
       - media:/app/media
+      - ./exports:/app/exports                   # manage.py export_clips 결과 (Git 제외, 얼굴이 나올 수 있음)
     ports:
       - "8000:8000"
     depends_on:

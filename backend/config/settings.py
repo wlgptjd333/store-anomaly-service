@@ -22,6 +22,7 @@ CSRF_TRUSTED_ORIGINS = env_list("DJANGO_CSRF_TRUSTED_ORIGINS", "http://localhost
 # HTTPS 로 열 때만 켠다 (DJANGO_HTTPS=1). 시연은 내부망 http 라 켜면 로그인 쿠키가 안 보내져 기본은 끔.
 # 켜면 manage.py check --deploy 경고 4개(쿠키 secure·HTTPS 이동·HSTS)가 사라진다. 앞단 프록시가 TLS 를 끝내는 구성 기준.
 HTTPS = env_bool("DJANGO_HTTPS", False)
+EXPORT_ROOT = os.environ.get("EXPORT_ROOT", "/app/exports")   # manage.py export_clips 기본 폴더
 SESSION_COOKIE_SECURE = CSRF_COOKIE_SECURE = SECURE_SSL_REDIRECT = HTTPS
 SECURE_HSTS_SECONDS = 3600 if HTTPS else 0                # 처음엔 짧게 (잘못 켜면 브라우저가 오래 기억함)
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https") if HTTPS else None
