@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from typing import Callable
+from collections.abc import Callable
 
 from django.db import transaction
 from django.utils import timezone

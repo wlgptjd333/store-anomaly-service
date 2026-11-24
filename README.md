@@ -1,5 +1,7 @@
 # store-anomaly-service
 
+[![check](https://github.com/wlgptjd333/store-anomaly-service/actions/workflows/ci.yml/badge.svg)](https://github.com/wlgptjd333/store-anomaly-service/actions/workflows/ci.yml)
+
 무인 상점 CCTV 같은 영상에서 **사람마다 어떤 이상행동에 가까운지** 예측해 기록·조회하는 웹 서비스입니다.
 교과10(자세추정·동작인식) 최종 프로젝트이며, 모델은 3팀이 직접 촬영한 데이터로 만든 것을 씁니다.
 
@@ -80,7 +82,11 @@ docker compose exec django python manage.py createsuperuser
 모델 파일 복사(1D-CNN 포함), Feature·모델 코드가 두 저장소에서 같은지 확인, Pose 모델 일치 확인, fastapi 다시 빌드(모델이 이미지 안에 들어감), `/health`·E2E 확인까지 합니다.
 영상 추가부터 전체 순서는 데이터 저장소 [Runbook](https://github.com/wlgptjd333/unmanned-store-anomaly/blob/main/docs/RETRAIN_RUNBOOK.md).
 
-로컬(도커 없이) 테스트: `cd backend && pip install -r requirements.txt && python manage.py test` (SQLite·가짜 AI 서버로 41개).
+로컬(도커 없이) 확인: `bash scripts/check.sh` — 린트(`ruff.toml`) · JS 문법 · Django check · migration 누락 · 단위 테스트 41개(SQLite·가짜 AI 서버).
+GitHub 에서도 push 마다 같은 확인이 돕니다 (`.github/workflows/ci.yml`, 위 check 배지). Docker 안에서는 `docker compose exec django python manage.py test`.
+
+HTTPS 로 열 때(앞단 프록시가 TLS 처리)는 `.env` 에 `DJANGO_HTTPS=1` — 쿠키 secure · http→https 이동 · HSTS 가 켜지고 `manage.py check --deploy` 경고가 없어집니다.
+내부망 http 시연에서는 0 (켜면 http 에서 로그인 쿠키가 안 보내짐).
 
 ## 3. 전체 아키텍처
 
@@ -430,6 +436,7 @@ Django 단위 테스트 41개(`backend/accounts/tests.py`, `backend/analyses/tes
 | 휴대폰 IP Webcam 서버를 켰는데 `카메라 'phone'에 연결하지 못했습니다` | 브라우저로는 휴대폰 주소가 열림 → `.env` 의 `IPWEBCAM_CAMERAS` 가 예시 주소 `192.168.0.10` 그대로 | 주소를 고치는 김에, 주소를 DB 카메라 표로 옮기고 관리자가 웹에서 수정·연결 확인하게 바꿈 (내부망 IP 만) | Celery 컨테이너에서 Frame 수신, 화면 '연결 확인' 640×480 |
 | 결과 화면에서 IP Webcam 녹화본·실시간 장면 저장 영상이 재생되지 않음 (검은 칸) | 파일은 정상, OpenCV 가 `mp4v`(MPEG-4 Part 2)로 저장 → Chrome·Edge `<video>` 미지원. 건너뛰기도 안 됨(Range 미지원) | 원본은 그대로 두고 Celery 가 ffmpeg 로 H.264 사본을 만들고, 권한 확인 + Range 응답 뷰로 보냄 | Edge 에서 재생·구간 이동 확인, 단위 테스트 206/416 |
 | 실시간 보기에서는 잘 맞는데 'AI 분석 시작' 결과는 A009·A010 (눕기) 로 나옴 | 저장된 8초 영상을 Frame 별로 열어 봄 → ① 휴대폰을 세로로 들어 영상이 90° 누워 있음 ② 버튼 뒤 7~8초 대기열에서 기다리다 녹화 시작(앞 작업 2개 + 실시간 보기와 CPU 공유) → 동작이 녹화 전에 끝남 | 카메라 '화면 회전' 설정, 화면에 '지금 녹화 중' 표시, 실시간 화면의 최근 8초를 그대로 저장하는 '이 장면 저장'·자동 감지 추가 | 같은 영상을 똑바로 돌려 다시 분석하니 눕기 예측이 사라지고 고른 동작 A003 이 1위(#43)·3위(#42)로 올라옴, 장면 저장 E2E 통과 |
+| Docker 안에서 단위 테스트 25개가 `camera name` 중복으로 실패 (밖에서는 통과) | 오류 내용 → migration `0002` 가 `.env` 의 `IPWEBCAM_CAMERAS` 를 테스트 DB 에도 옮겨 넣음 | 테스트 공통 부모 `CleanTestCase` 가 빈 카메라 표에서 시작, `scripts/check.sh` 는 환경변수를 비우고 실행 | 도커 안·밖·CI 모두 41개 통과 |
 
 ## 폴더 구조
 
@@ -451,7 +458,8 @@ store-anomaly-service/
 │   ├── src/                데이터 저장소(unmanned-store-anomaly)에서 복사: pose_utils · feature_utils · team_feature_utils · sequence_extras · temporal_cnn
 │   ├── models/             Joblib · Feature 순서 · 학습 정보
 │   └── Dockerfile
-├── scripts/                e2e_check.py (Docker 통합 확인) · capture_screens.py (README 캡처) · update_model.sh (모델 교체)
+├── scripts/                check.sh (린트·테스트 한 번에) · e2e_check.py (Docker 통합 확인) · capture_screens.py (README 캡처) · update_model.sh (모델 교체)
+├── ruff.toml · .github/    린트 기준 · push 마다 check.sh 와 같은 확인 (CI)
 ├── docs/PIPELINE.md        'AI 분석 시작'부터 저장까지 파일·함수 단위 흐름, 공통 코드 정리 기록
 └── docs/images/            README 캡처 (영상은 본인 S04 만, 비밀번호·카메라 주소 없음)
 ```

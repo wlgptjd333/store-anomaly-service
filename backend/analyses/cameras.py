@@ -37,7 +37,7 @@ def validate_camera_url(url: str) -> None:
     if p.scheme not in ("http", "https"):
         raise ValidationError("http:// 주소만 쓸 수 있습니다 (예: 192.168.0.10:8080).")
     try:
-        p.port
+        _ = p.port                      # 잘못된 포트면 여기서 ValueError
     except ValueError as exc:
         raise ValidationError("포트 번호가 올바르지 않습니다.") from exc
     try:

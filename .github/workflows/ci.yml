@@ -1,0 +1,24 @@
+# push · PR 마다 scripts/check.sh 와 같은 확인을 GitHub 에서 돌린다 (AI 모델·Docker 없이 몇 분 안에 끝남)
+name: check
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - run: pip install -r backend/requirements.txt ruff==0.17.5
+      - run: PY=python RUFF=ruff scripts/check.sh
+      - name: compose 파일 문법
+        env:
+          DJANGO_SECRET_KEY: ci-only
+          POSTGRES_PASSWORD: ci-only
+        run: docker compose config -q

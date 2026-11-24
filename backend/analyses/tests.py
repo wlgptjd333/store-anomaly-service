@@ -35,8 +35,17 @@ def video_file(name="clip.mp4"):
     return SimpleUploadedFile(name, b"\x00\x00\x00\x18ftypmp42fake", content_type="video/mp4")
 
 
+class CleanTestCase(TestCase):
+    """migration 0002 가 .env 의 IPWEBCAM_CAMERAS 를 테스트 DB 에도 옮겨 넣는다.
+    그대로 두면 Docker 안(.env 있음)과 밖(없음)에서 결과가 달라지므로, 모든 테스트는 빈 카메라 표에서 시작한다."""
+
+    @classmethod
+    def setUpTestData(cls):
+        Camera.objects.all().delete()
+
+
 @override_settings(MEDIA_ROOT=TMP_MEDIA)
-class AnalysisApiTests(TestCase):
+class AnalysisApiTests(CleanTestCase):
     @classmethod
     def tearDownClass(cls):
         super().tearDownClass()
@@ -162,7 +171,7 @@ class AnalysisApiTests(TestCase):
 
 
 @override_settings(MEDIA_ROOT=TMP_MEDIA)
-class DashboardTests(TestCase):
+class DashboardTests(CleanTestCase):
     def setUp(self):
         self.staff = User.objects.create_user("boss", password="pw-boss-123", is_staff=True)
         self.user = User.objects.create_user("normal", password="pw-normal-123")
@@ -194,7 +203,7 @@ class DashboardTests(TestCase):
         self.assertContains(r, "IP Webcam")
 
 
-class CameraTests(TestCase):
+class CameraTests(CleanTestCase):
     """카메라 주소: 관리자만 웹에서 바꾸고, 내부망 숫자 IP 만 받는다 (임의 URL 호출 방지)."""
 
     def setUp(self):
@@ -251,7 +260,7 @@ class CameraTests(TestCase):
         self.assertEqual(r.status_code, 400)
 
 
-class LiveTests(TestCase):
+class LiveTests(CleanTestCase):
     """실시간 보기: Django 는 카메라 이름 → 주소를 바꿔 FastAPI 에 넘기고, 로그인한 사람만 화면을 받는다."""
 
     SID = "0f8e6a52-3b1c-4c55-9a2f-2b8f4f7d1a10"
@@ -298,7 +307,7 @@ class LiveTests(TestCase):
 
 @override_settings(MEDIA_ROOT=TMP_MEDIA, LIVE_AUTO_MIN_CONFIDENCE=0.5, LIVE_AUTO_MIN_SECONDS=3,
                    LIVE_AUTO_COOLDOWN_SECONDS=15)
-class LiveSaveTests(TestCase):
+class LiveSaveTests(CleanTestCase):
     """이 장면 저장·자동 감지: 실시간이 본 최근 8초를 저장 → 같은 Celery·FastAPI 분석으로 기록."""
 
     SID = "0f8e6a52-3b1c-4c55-9a2f-2b8f4f7d1a10"
@@ -393,7 +402,7 @@ def fake_ffmpeg(cmd, **kwargs):
 
 
 @override_settings(MEDIA_ROOT=TMP_MEDIA)
-class VideoPlaybackTests(TestCase):
+class VideoPlaybackTests(CleanTestCase):
     """분석한 영상 다시 보기: 재생용 사본·권한·구간 이동(Range)·삭제."""
 
     def setUp(self):
@@ -501,7 +510,7 @@ class VideoPlaybackTests(TestCase):
 
 
 @override_settings(MEDIA_ROOT=TMP_MEDIA)
-class DashboardToolsTests(TestCase):
+class DashboardToolsTests(CleanTestCase):
     """대시보드 편의 기능: 기간·조건·검색·쪽 나누기·CSV."""
 
     def setUp(self):

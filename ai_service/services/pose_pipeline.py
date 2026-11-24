@@ -41,7 +41,7 @@ class TrackData:
     valid: list[bool] = field(default_factory=list)
     keypoint_conf: list[float] = field(default_factory=list)
 
-    def add(self, t: float, person: "Person") -> None:
+    def add(self, t: float, person: Person) -> None:
         self.times.append(t)
         self.features.append(person.values)
         self.valid.append(person.valid)
@@ -108,7 +108,7 @@ def track_people(pose_model, frame: np.ndarray, cfg: dict, device, persist: bool
     xys = kps.xy.cpu().numpy()
     confs = kps.conf.cpu().numpy() if kps.conf is not None else np.ones((len(ids), 17), np.float32)
     people = []
-    for tid, xy, conf, box in zip(ids, xys, confs, boxes.xyxy.cpu().numpy()):
+    for tid, xy, conf, box in zip(ids, xys, confs, boxes.xyxy.cpu().numpy(), strict=True):
         values, valid = frame_features(xy, conf, w, h, cfg["keypoint_confidence"])
         people.append(Person(int(tid), xy, conf, box, values, valid))
     return people

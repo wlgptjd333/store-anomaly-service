@@ -152,7 +152,7 @@
       if (!body) return;
       body.innerHTML = jobs.length ? jobs.map((j) => `<tr>
           <td><a href="/analyses/${j.id}/">${j.id}</a></td>
-          <td class="nowrap">${Util.esc(j.input_type_display)}${j.source_display ? `<br><span class="${j.source === "LIVE_AUTO" ? "badge" : "muted small"}">${Util.esc(j.source_display)}</span>` : ""}</td>
+          <td class="nowrap">${Util.esc(j.input_type_display)}${j.source_display ? `<br><span class="${j.source === "LIVE_AUTO" ? "badge" : "muted small"}">${Util.esc(j.source_display)}</span>` : ""}${j.title ? `<br><span class="muted small cell-title" title="${Util.esc(j.title)}">${Util.esc(j.title)}</span>` : ""}</td>
           <td>${j.expected_action ? Util.esc(j.expected_action_display) : "-"}</td>
           <td>${j.predictions.map(View.predictionLine).join("<br>") || (j.status === "FAILURE" ? `<span class="error">${Util.esc(j.error_message)}</span>` : Util.esc(j.result_message) || "-")}</td>
           <td>${View.badge(j.status)}</td>

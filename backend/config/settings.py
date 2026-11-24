@@ -19,6 +19,15 @@ DEBUG = env_bool("DJANGO_DEBUG", False)
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1")
 CSRF_TRUSTED_ORIGINS = env_list("DJANGO_CSRF_TRUSTED_ORIGINS", "http://localhost:8000,http://127.0.0.1:8000")
 
+# HTTPS 로 열 때만 켠다 (DJANGO_HTTPS=1). 시연은 내부망 http 라 켜면 로그인 쿠키가 안 보내져 기본은 끔.
+# 켜면 manage.py check --deploy 경고 4개(쿠키 secure·HTTPS 이동·HSTS)가 사라진다. 앞단 프록시가 TLS 를 끝내는 구성 기준.
+HTTPS = env_bool("DJANGO_HTTPS", False)
+SESSION_COOKIE_SECURE = CSRF_COOKIE_SECURE = SECURE_SSL_REDIRECT = HTTPS
+SECURE_HSTS_SECONDS = 3600 if HTTPS else 0                # 처음엔 짧게 (잘못 켜면 브라우저가 오래 기억함)
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https") if HTTPS else None
+# HSTS 서브도메인·preload 는 도메인 전체(다른 서비스 포함)에 오래 남아 일부러 켜지 않음
+SILENCED_SYSTEM_CHECKS = ["security.W005", "security.W021"]
+
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",

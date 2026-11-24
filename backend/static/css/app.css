@@ -139,3 +139,5 @@ a.button-like { display: inline-block; padding: 6px 12px; border: 1px solid var(
   .preview, .detail-grid, .current-grid { grid-template-columns: 1fr; }
   .kpis.kpis-8 { grid-template-columns: repeat(2, 1fr); }
 }
+/* 기록 목록의 제목: 길면 말줄임 (전체는 마우스를 올리면 보임) */
+.cell-title{display:inline-block;max-width:11em;overflow:hidden;text-overflow:ellipsis;vertical-align:bottom;white-space:nowrap}

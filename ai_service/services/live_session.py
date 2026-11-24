@@ -209,7 +209,7 @@ class LiveSession:
                 self.stop(f"최대 {cfg['live_max_seconds'] // 60}분이 지나 멈췄습니다. 다시 시작하세요.")
                 return
             with self._cond:
-                self._cond.wait_for(lambda: self._raw_seq != last_seq or self._stop.is_set(), timeout=1.0)
+                self._cond.wait_for(lambda seq=last_seq: self._raw_seq != seq or self._stop.is_set(), timeout=1.0)
                 if self._stop.is_set() or self._raw is None or self._raw_seq == last_seq:
                     continue
                 last_seq = self._raw_seq
@@ -289,7 +289,7 @@ class LiveSession:
             for a, b in COCO_SKELETON:
                 if conf[a] >= kp_min and conf[b] >= kp_min:
                     cv2.line(img, tuple(map(int, xy[a])), tuple(map(int, xy[b])), color, 2 * s, cv2.LINE_AA)
-            for (x, y), c in zip(xy, conf):
+            for (x, y), c in zip(xy, conf, strict=True):
                 if c >= kp_min:
                     cv2.circle(img, (int(x), int(y)), 3 * s, (255, 255, 255), -1, cv2.LINE_AA)
             x1, y1, x2, y2 = map(int, box)
@@ -319,7 +319,7 @@ class LiveSession:
         last = 0
         while not self._stop.is_set():
             with self._cond:
-                self._cond.wait_for(lambda: self.jpeg_seq != last or self._stop.is_set(), timeout=1.0)
+                self._cond.wait_for(lambda seq=last: self.jpeg_seq != seq or self._stop.is_set(), timeout=1.0)
                 if self.jpeg_seq == last or self.jpeg is None:
                     continue
                 last, jpg = self.jpeg_seq, self.jpeg

@@ -1,0 +1,19 @@
+# 린트 기준 — CI(.github/workflows/ci.yml)와 scripts/check.sh 가 같이 쓴다
+target-version = "py312"
+line-length = 120
+extend-exclude = ["**/migrations/**"]
+
+[lint]
+select = ["F", "E", "W", "B", "UP", "SIM", "C4", "S"]
+ignore = [
+  "E501",    # 한글 주석이 길어 줄 길이는 보지 않음
+  "B008",    # FastAPI 는 File()/Depends() 를 기본값에 쓰는 게 정석
+  "SIM117",  # with 를 겹쳐 쓴 테스트가 읽기 쉬움
+  "S101",    # assert
+  "S603",    # ffmpeg 는 고정 인자 목록으로만 실행 (shell 안 씀)
+]
+
+[lint.per-file-ignores]
+"**/tests.py" = ["S105", "S106"]          # 테스트용 비밀번호
+# 데이터 저장소(unmanned-store-anomaly)와 같아야 하는 파일 — 고치려면 거기서 고치고 복사
+"ai_service/src/*" = ["UP", "C4", "B905", "SIM"]

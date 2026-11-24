@@ -104,15 +104,15 @@ def ranged_file_response(request, path: Path, filename: str, as_attachment: bool
             resp = HttpResponse(status=416)
             resp["Content-Range"] = f"bytes */{size}"
             return resp
-        f = open(path, "rb")
+        f = open(path, "rb")                                       # noqa: SIM115  _chunks 가 다 보낸 뒤 닫음
         f.seek(start)
         resp = StreamingHttpResponse(_chunks(f, end - start + 1), status=206, content_type=content_type)
         resp["Content-Range"] = f"bytes {start}-{end}/{size}"
         resp["Content-Length"] = str(end - start + 1)
         resp["Content-Disposition"] = content_disposition_header(False, filename)
     else:
-        resp = FileResponse(open(path, "rb"), content_type=content_type, as_attachment=as_attachment,
-                            filename=filename)
+        resp = FileResponse(open(path, "rb"), content_type=content_type,  # noqa: SIM115  FileResponse 가 닫음
+                            as_attachment=as_attachment, filename=filename)
     resp["Accept-Ranges"] = "bytes"
     resp["Cache-Control"] = "private, max-age=600"
     resp["X-Content-Type-Options"] = "nosniff"
