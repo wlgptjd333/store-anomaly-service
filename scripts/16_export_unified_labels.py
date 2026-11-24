@@ -27,7 +27,6 @@ import importlib.util
 import json
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 from sklearn.metrics import accuracy_score, f1_score
 

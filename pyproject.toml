@@ -20,3 +20,11 @@ dev = [
     "pytest",
     "ruff",
 ]
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+# 실험 스크립트라 오류가 될 만한 것만 본다: 안 쓰는 import·이름 오류·문법 · 흔한 버그 모양
+select = ["F", "E9", "B"]
+ignore = ["B007", "B008", "B905"]
