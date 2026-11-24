@@ -1,0 +1,13 @@
+﻿set,config,acc_all,acc_FS,acc_B,subj_min
+validation_S04,ExtraTrees (지금),86.9,89.2,82.4,86.9
+validation_S04,1D-CNN,90.8,93.1,86.3,90.8
+validation_S04,GRU,88.2,91.2,82.4,88.2
+validation_S04,ExtraTrees + 1D-CNN 평균,96.1,98.0,92.2,96.1
+validation_S04,ExtraTrees + GRU 평균,90.8,93.1,86.3,90.8
+validation_S04,ExtraTrees + 1D-CNN + GRU 평균,94.8,97.1,90.2,94.8
+test_S05,ExtraTrees (지금),78.4,81.4,72.5,78.4
+test_S05,1D-CNN,79.7,75.5,88.2,79.7
+test_S05,GRU,73.2,71.6,76.5,73.2
+test_S05,ExtraTrees + 1D-CNN 평균,82.4,81.4,84.3,82.4
+test_S05,ExtraTrees + GRU 평균,74.5,72.5,78.4,74.5
+test_S05,ExtraTrees + 1D-CNN + GRU 평균,75.8,73.5,80.4,75.8

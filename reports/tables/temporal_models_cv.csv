@@ -1,0 +1,7 @@
+﻿config,acc_all,acc_FS,acc_B,subj_min,acc_all_std
+ExtraTrees (지금),82.4,88.2,70.6,75.2,0.4
+1D-CNN,84.8,89.0,76.5,78.4,2.2
+GRU,79.7,84.8,69.6,71.2,1.7
+ExtraTrees + 1D-CNN 평균,88.6,92.9,79.9,84.3,1.4
+ExtraTrees + GRU 평균,83.8,88.7,74.0,77.8,2.4
+ExtraTrees + 1D-CNN + GRU 평균,86.8,91.9,76.5,81.0,0.7

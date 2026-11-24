@@ -91,6 +91,7 @@ python scripts/13_build_sequence_dataset.py      # 30단계 고정 길이 → re
 |---|---|---|---|
 | `18_back_view_experiments.py` | 방향별 학습·좌우 반전·얼굴 관절 (LOSO) | `back_view_*.csv` | 약 4분 |
 | `19_model_improvement.py` | 덧붙이는 Feature × RF·ExtraTrees·SVM | `model_improvement_cv.csv` | 약 3분 |
+| `21_temporal_models.py [--test]` | 1D-CNN·GRU 와 ExtraTrees 섞기 (지금 서비스 = ExtraTrees + 1D-CNN) | `temporal_models_cv.csv`, `_per_action.csv` | GPU 약 4분 |
 | `20_more_improvements.py [이름 일부]` | Pose 모델 크기, 단계 수, 떨림 줄이기, TTA, 나무 설정, 시간 자르기 증강 | `more_improvements_cv.csv` | 설정 하나에 1~2분 |
 
 - 새 방법은 `20` 의 `configs()` 에 한 줄(또는 `DATASETS` 에 데이터 하나) 더하고 `python scripts/20_more_improvements.py <이름 일부>` 로 그것만 돌리면 기존 표에 합쳐집니다.
@@ -115,7 +116,8 @@ python scripts/15_export_service_model.py --model rf --extras ""            # 11
 python scripts/15_export_service_model.py --model rf --extras "" --views FS --no-flip   # 11/22 모델
 ```
 
-- 출력 `artifacts/service/` 의 3개 파일: `action_model.joblib`, `feature_columns.json`, `training_info.json`
+- 출력 `artifacts/service/`: `action_model.joblib`(ExtraTrees), `action_cnn.pt`(1D-CNN 3개), `feature_columns.json`, `training_info.json`
+  - 1D-CNN 학습은 GPU 면 약 1분, CPU 만 있으면 수십 분. ExtraTrees 만 내보내려면 `--cnn-seeds ""` (이때 예전 `action_cnn.pt` 는 지움)
 - 화면에 Train S01~S03 → Validation S04 / Test S05 정확도가 방향별로 나옴 (기록용, `training_info.json` 에도 저장). 최종 모델은 5명 전부로 학습.
 - 서비스 화면·대시보드에 보이는 번호·이름은 **팀 통일 표기**(A001 `kiosk_tap` 키오스크 두드리기 …): `15` 가 [`configs/unified_label_map.csv`](../configs/unified_label_map.csv) 로 Class 를 바꿔 `training_info.json` 의 `class_info` 에 넣음 (분류는 `configs/action_classes.csv`). 이름을 바꾸려면 `unified_label_map.csv` 를 고치고, 서비스 `backend/analyses/actions.py` 도 같이 (Django 는 그 목록으로 화면·대시보드를 그림). 예전 번호로 내보내기는 `--repo-ids`.
 
@@ -126,7 +128,7 @@ cd ~/ai_vision/store-anomaly-service
 bash scripts/update_model.sh ~/ai_vision/unmanned-store-anomaly ~/ai_vision/unmanned-store-anomaly/data/rgb/videos/T03_S04_A05_T01_F.mp4
 ```
 
-`update_model.sh` 가 하는 일: 모델 파일 3개 복사 → Feature 코드(`src/feature_utils.py`, `team_feature_utils.py`, `sequence_extras.py`)가 두 저장소에서 같은지 확인·맞춤 →
+`update_model.sh` 가 하는 일: 모델 파일 복사(`action_cnn.pt` 포함, 없으면 서비스 쪽도 지움) → Feature·모델 코드(`src/feature_utils.py`, `team_feature_utils.py`, `sequence_extras.py`, `temporal_cnn.py`)가 두 저장소에서 같은지 확인·맞춤 →
 Pose 모델이 서비스 설정과 같은지 확인 → `docker compose up -d --build fastapi` + celery 재시작 → `/health` 확인 → (영상을 주면) E2E 업로드·분석·저장 확인.
 
 그다음 손으로:
@@ -134,7 +136,8 @@ Pose 모델이 서비스 설정과 같은지 확인 → `docker compose up -d --
 1. 화면 캡처 다시: `scripts/capture_screens.py --success <job> --failure <job> --multi <job>` (Playwright, 얼굴은 S04 만)
 2. 서비스 README: 모델 파일 표, 6장 정확도 표, 7장 T01~T10 표, 한계(약한 동작)
 3. 이 저장소 README "지금까지 결과", `BASELINE_EVALUATION.md`
-4. 두 저장소 커밋 (모델 파일 3개는 Git 에 포함, 8.7 MB)
+4. 두 저장소 커밋 (서비스의 모델 파일은 Git 에 포함, 약 10 MB. `action_cnn.pt` 는 .gitignore 의 `*.pt` 예외로 올라감)
+5. 모델 종류를 바꿨으면 `판단 불확실` 기준(30%)도 다시 확인: 학습에 없던 사람에서 30% 위쪽 정확도·표시 비율 (Baseline 성능평가 5-5 참고)
 
 **Pose 모델을 바꿀 때만 추가로**: 서비스 `ai_service/project.json` 의 `pose_model`, `ai_service/Dockerfile` 의 가중치 받는 줄(`yolo11n-pose.pt`),
 이 저장소 `configs/project.json` 의 `pose_model` 을 같이 바꾸고 03 부터 다시 (학습 Keypoint 와 서비스 Keypoint 가 같은 모델이어야 함).

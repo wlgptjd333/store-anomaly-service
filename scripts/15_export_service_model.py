@@ -11,7 +11,8 @@
   1) 확인: Train S01~S03 → Validation S04, Test S05 정확도 (방향별로도, 기록용)
   2) 서비스용 최종 학습: 5명(S01~S05) 전부. 평가는 1)의 수치를 README 에 적는다
   3) 저장: artifacts/service/
-       action_model.joblib     분류 모델 (17 Class)
+       action_model.joblib     분류 모델 (17 Class, ExtraTrees)
+       action_cnn.pt           시간 순서 1D-CNN (난수 3개, src/temporal_cnn.py) — 서비스는 ExtraTrees 확률과 평균
        feature_columns.json    입력 Feature 이름·순서 (t00_bn_nose_x … d00_… mean_…)
        training_info.json      Class·이름·단계 수·Frame Feature·덧붙인 Feature·창 길이·평가 수치
 
@@ -20,9 +21,11 @@
   - 11/24 오전 정면·측면·뒤 255개 + 좌우 반전 (18번 실험: LOSO 뒷모습 37% → 68%)
   - 11/24 오후 ExtraTrees 1000그루 + 변화량·요약 통계 Feature (19번 실험: S01~S04 4-fold 71.9% → 82.4%)
     · 좌우 반전 복사본은 학습 데이터에만 더한다 (평가는 원본).
+  - 11/24 밤 ExtraTrees + 1D-CNN 확률 평균 (21번 실험: 4-fold 82.4 → 88.7, Test S05 78.4 → 83.0)
 
 실행: .venv/bin/python scripts/15_export_service_model.py                                   # 지금 서비스 모델 (기본)
-      .venv/bin/python scripts/15_export_service_model.py --model rf --extras ""             # 11/24 오전 모델
+      .venv/bin/python scripts/15_export_service_model.py --cnn-seeds ""                       # 11/24 오후 모델 (ExtraTrees 만)
+      .venv/bin/python scripts/15_export_service_model.py --model rf --extras "" --cnn-seeds ""   # 11/24 오전 모델
       .venv/bin/python scripts/15_export_service_model.py --model rf --extras "" --views FS --no-flip   # 11/22 모델
 """
 from __future__ import annotations
@@ -44,6 +47,7 @@ from sklearn.metrics import accuracy_score, f1_score
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+from src.temporal_cnn import CnnEnsemble  # noqa: E402
 from src.sequence_extras import add_extras, extra_names  # noqa: E402
 
 CFG = json.loads((ROOT / "configs" / "baseline_config.json").read_text(encoding="utf-8"))
@@ -74,6 +78,8 @@ def parse_args():
     ap.add_argument("--no-flip", action="store_true", help="좌우 반전 복사본을 더하지 않음")
     ap.add_argument("--model", choices=["et", "rf"], default="et", help="et = ExtraTrees 1000, rf = RandomForest 300")
     ap.add_argument("--extras", default="velocity,stats", help='덧붙일 Feature (velocity, stats). 없으면 ""')
+    ap.add_argument("--cnn-seeds", default="42,0,1",
+                    help='1D-CNN 난수 (쉼표). 여러 개면 확률 평균. 없으면 "" → ExtraTrees 만 (GPU 있으면 약 1분)')
     ap.add_argument("--repo-ids", action="store_true",
                     help="Class 를 이 저장소 번호(A01..)로. 기본은 팀 통일 번호(A001.., unified_label_map.csv)")
     return ap.parse_args()
@@ -124,11 +130,30 @@ def main() -> None:
     names = COLUMNS + extra_names(FRAME_FEATURES, STEPS, extras)
     assert X.shape[1] == len(names)
 
+    cnn_seeds = [int(x) for x in args.cnn_seeds.split(",") if x.strip()]
+
     def train(part: pd.DataFrame):
+        """(ExtraTrees, 1D-CNN 묶음 또는 None)"""
         if flip:
             part = pd.concat([part, t17.flip(part)], ignore_index=True)
-        Xp = add_extras(part[COLUMNS].to_numpy(float), STEPS, len(FRAME_FEATURES), extras)
-        return make_model(args.model).fit(Xp, part["action_id"].astype(str).to_numpy())
+        Xb = part[COLUMNS].to_numpy(float)
+        yp = part["action_id"].astype(str).to_numpy()
+        tree = make_model(args.model).fit(add_extras(Xb, STEPS, len(FRAME_FEATURES), extras), yp)
+        cnn = None
+        if cnn_seeds:
+            idx = {c: i for i, c in enumerate(tree.classes_)}      # CNN 출력 순서 = ExtraTrees classes_ 순서
+            cnn = CnnEnsemble.fit(Xb, np.array([idx[a] for a in yp]), STEPS, len(FRAME_FEATURES),
+                                  len(tree.classes_), cnn_seeds)
+        return tree, cnn
+
+    def predict(models, Xb: np.ndarray) -> np.ndarray:
+        tree, cnn = models
+        p = tree.predict_proba(add_extras(Xb, STEPS, len(FRAME_FEATURES), extras))
+        if cnn is not None:
+            p = (p + cnn.predict_proba(Xb)) / 2
+        return tree.classes_[p.argmax(1)]
+
+    Xbase = df[COLUMNS].to_numpy(float)
 
     # 1) 기록용 평가 (Train S01~S03) — 방향별로도 적음
     tr = df.subject_id.isin(subjects("train")).to_numpy()
@@ -136,7 +161,7 @@ def main() -> None:
     ev = {}
     for name, key in (("validation_S04", "validation"), ("test_S05", "test")):
         m = df.subject_id.isin(subjects(key)).to_numpy()
-        p = model.predict(X[m])
+        p = predict(model, Xbase[m])
         ev[name] = {"accuracy": round(float(accuracy_score(y[m], p)), 4),
                     "macro_f1": round(float(f1_score(y[m], p, average="macro")), 4), "clips": int(m.sum())}
         for v in views:
@@ -145,11 +170,15 @@ def main() -> None:
     print("평가 (Train S01~S03):", ev)
 
     # 2) 서비스용: 5명 전부
-    final = train(df)
+    final, final_cnn = train(df)
     secs = clip_seconds()
 
     OUT.mkdir(parents=True, exist_ok=True)
     joblib.dump(final, OUT / "action_model.joblib", compress=3)
+    if final_cnn is not None:
+        final_cnn.save(OUT / "action_cnn.pt")
+    elif (OUT / "action_cnn.pt").exists():
+        (OUT / "action_cnn.pt").unlink()          # ExtraTrees 만 내보낼 땐 예전 CNN 을 남기지 않음
     (OUT / "feature_columns.json").write_text(json.dumps(names, ensure_ascii=False, indent=1), encoding="utf-8")
     classes = [str(c) for c in final.classes_]
     params = {k: v for k, v in final.get_params().items() if k in ("n_estimators", "max_depth", "class_weight",
@@ -168,6 +197,8 @@ def main() -> None:
                            **({"repo_action_id": acts[c]["repo_action_id"]} if "repo_action_id" in acts[c] else {})}
                        for c in classes},
         "class_ids": "repo" if args.repo_ids else "unified",
+        "ensemble": ({"cnn_file": "action_cnn.pt", "cnn_seeds": cnn_seeds, "combine": "mean(ExtraTrees, 1D-CNN)",
+                      "code": "src/temporal_cnn.py"} if final_cnn is not None else None),
         "model_params": params,
         "pose": {"model": PROJECT["pose_model"], "image_size": PROJECT["image_size"],
                  "person_confidence": PROJECT["person_confidence"],
