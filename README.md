@@ -249,7 +249,7 @@ sequenceDiagram
 - **입력 영상**: mp4·mov·avi·mkv·webm, 100 MB 이하, 처음 60초까지. 60fps 는 30fps 로 줄여 처리.
 - **IP Webcam**: `.env` 에 등록한 카메라만 이름으로 고르고, Worker 가 **8초** 동안 받아 MP4 로 저장한 뒤 같은 추론을 탑니다.
 
-FastAPI `POST /predict/video` 응답 (발췌):
+FastAPI `POST /predict/video` 응답 형식 (발췌, 11/23 첫 모델 때 받은 값 — 숫자는 지금 모델과 다름):
 
 ```json
 {
