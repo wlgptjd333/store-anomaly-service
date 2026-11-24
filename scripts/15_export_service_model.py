@@ -8,20 +8,22 @@
     차이는 난수 변동(±4%p) 안이다 → 입력 모양이 맞는 쪽을 고른다.
 
 하는 일
-  1) 확인: Train S01~S03 → Validation S04, Test S05 정확도 (14번과 같은 설정, 기록용)
-  2) 서비스용 최종 학습: 5명(S01~S05) 170개 전부. 평가는 1)의 수치를 README 에 적는다
+  1) 확인: Train S01~S03 → Validation S04, Test S05 정확도 (방향별로도, 기록용)
+  2) 서비스용 최종 학습: 5명(S01~S05) 전부. 평가는 1)의 수치를 README 에 적는다
   3) 저장: artifacts/service/
-       store_anomaly_rf.joblib       Random Forest (17 Class)
-       rf_feature_columns.json       1,200개 Feature 이름·순서 (t00_bn_nose_x …)
-       rf_training_info.json         Class·이름·단계 수·Frame Feature·창 길이·평가 수치
+       action_model.joblib     분류 모델 (17 Class)
+       feature_columns.json    입력 Feature 이름·순서 (t00_bn_nose_x … d00_… mean_…)
+       training_info.json      Class·이름·단계 수·Frame Feature·덧붙인 Feature·창 길이·평가 수치
 
-2026-11-24 갱신 — 정면·측면·뒤 + 좌우 반전 (18번 실험 결과)
-  - 뒷모습 85개(11/23 재촬영)를 넣으면 LOSO 뒷모습 37% → 68%, 정면·측면도 76.7% → 78.4% (whole 창).
-  - 좌우 반전 복사본은 학습 데이터에만 더한다 (평가는 원본).
-  - 예전 모델(정면·측면 170개, 반전 없음)은 --views FS --no-flip 으로 다시 만들 수 있다.
+갱신 기록
+  - 11/22 정면·측면 170개, Random Forest 300그루, 1,200 Feature
+  - 11/24 오전 정면·측면·뒤 255개 + 좌우 반전 (18번 실험: LOSO 뒷모습 37% → 68%)
+  - 11/24 오후 ExtraTrees 1000그루 + 변화량·요약 통계 Feature (19번 실험: S01~S04 4-fold 71.9% → 82.4%)
+    · 좌우 반전 복사본은 학습 데이터에만 더한다 (평가는 원본).
 
-실행: .venv/bin/python scripts/15_export_service_model.py              # 정면·측면·뒤 + 반전 (기본)
-      .venv/bin/python scripts/15_export_service_model.py --views FS --no-flip   # 11/22 모델
+실행: .venv/bin/python scripts/15_export_service_model.py                                   # 지금 서비스 모델 (기본)
+      .venv/bin/python scripts/15_export_service_model.py --model rf --extras ""             # 11/24 오전 모델
+      .venv/bin/python scripts/15_export_service_model.py --model rf --extras "" --views FS --no-flip   # 11/22 모델
 """
 from __future__ import annotations
 
@@ -29,6 +31,7 @@ import argparse
 import csv
 import importlib.util
 import json
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -36,10 +39,13 @@ import joblib
 import numpy as np
 import pandas as pd
 import sklearn
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import ExtraTreesClassifier, RandomForestClassifier
 from sklearn.metrics import accuracy_score, f1_score
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from src.sequence_extras import add_extras, extra_names  # noqa: E402
+
 CFG = json.loads((ROOT / "configs" / "baseline_config.json").read_text(encoding="utf-8"))
 SPLIT = json.loads((ROOT / "configs" / "subject_split.json").read_text(encoding="utf-8"))
 PROJECT = json.loads((ROOT / "configs" / "project.json").read_text(encoding="utf-8"))
@@ -65,19 +71,17 @@ def parse_args():
     ap = argparse.ArgumentParser()
     ap.add_argument("--views", default="FSB", help="학습에 쓸 방향 (F 정면, S 측면, B 뒤)")
     ap.add_argument("--no-flip", action="store_true", help="좌우 반전 복사본을 더하지 않음")
+    ap.add_argument("--model", choices=["et", "rf"], default="et", help="et = ExtraTrees 1000, rf = RandomForest 300")
+    ap.add_argument("--extras", default="velocity,stats", help='덧붙일 Feature (velocity, stats). 없으면 ""')
     return ap.parse_args()
 
 
-def train(part: pd.DataFrame, flip: bool) -> RandomForestClassifier:
-    if flip:
-        part = pd.concat([part, t17.flip(part)], ignore_index=True)
-    return make_rf().fit(part[COLUMNS].to_numpy(float), part["action_id"].to_numpy())
-
-
-def make_rf() -> RandomForestClassifier:
+def make_model(kind: str):
     m = CFG["model"]
-    return RandomForestClassifier(n_estimators=m["n_estimators"], max_depth=m["max_depth"],
-                                  random_state=m["random_state"], class_weight=m["class_weight"], n_jobs=-1)
+    if kind == "rf":
+        return RandomForestClassifier(n_estimators=m["n_estimators"], max_depth=m["max_depth"],
+                                      random_state=m["random_state"], class_weight=m["class_weight"], n_jobs=-1)
+    return ExtraTreesClassifier(n_estimators=1000, random_state=m["random_state"], class_weight="balanced", n_jobs=-1)
 
 
 def subjects(key: str) -> list[str]:
@@ -98,19 +102,28 @@ def clip_seconds() -> list[float]:
 def main() -> None:
     args = parse_args()
     views, flip = list(args.views), not args.no_flip
+    extras = [e for e in args.extras.split(",") if e]
     df = pd.read_csv(DATA)
     df = df[df.view.isin(views)].reset_index(drop=True)
     acts = {r["action_id"]: r for r in csv.DictReader((ROOT / "configs" / "action_classes.csv").open(encoding="utf-8-sig"))}
-    y = df["action_id"].to_numpy()
-    X = df[COLUMNS].to_numpy(float)
+    y = df["action_id"].astype(str).to_numpy()
+    X = add_extras(df[COLUMNS].to_numpy(float), STEPS, len(FRAME_FEATURES), extras)
+    names = COLUMNS + extra_names(FRAME_FEATURES, STEPS, extras)
+    assert X.shape[1] == len(names)
+
+    def train(part: pd.DataFrame):
+        if flip:
+            part = pd.concat([part, t17.flip(part)], ignore_index=True)
+        Xp = add_extras(part[COLUMNS].to_numpy(float), STEPS, len(FRAME_FEATURES), extras)
+        return make_model(args.model).fit(Xp, part["action_id"].astype(str).to_numpy())
 
     # 1) 기록용 평가 (Train S01~S03) — 방향별로도 적음
     tr = df.subject_id.isin(subjects("train")).to_numpy()
-    rf = train(df[tr], flip)
+    model = train(df[tr])
     ev = {}
     for name, key in (("validation_S04", "validation"), ("test_S05", "test")):
         m = df.subject_id.isin(subjects(key)).to_numpy()
-        p = rf.predict(X[m])
+        p = model.predict(X[m])
         ev[name] = {"accuracy": round(float(accuracy_score(y[m], p)), 4),
                     "macro_f1": round(float(f1_score(y[m], p, average="macro")), 4), "clips": int(m.sum())}
         for v in views:
@@ -119,24 +132,27 @@ def main() -> None:
     print("평가 (Train S01~S03):", ev)
 
     # 2) 서비스용: 5명 전부
-    final = train(df, flip)
+    final = train(df)
     secs = clip_seconds()
 
     OUT.mkdir(parents=True, exist_ok=True)
-    joblib.dump(final, OUT / "store_anomaly_rf.joblib", compress=3)
-    (OUT / "rf_feature_columns.json").write_text(json.dumps(COLUMNS, ensure_ascii=False, indent=1), encoding="utf-8")
+    joblib.dump(final, OUT / "action_model.joblib", compress=3)
+    (OUT / "feature_columns.json").write_text(json.dumps(names, ensure_ascii=False, indent=1), encoding="utf-8")
     classes = [str(c) for c in final.classes_]
+    params = {k: v for k, v in final.get_params().items() if k in ("n_estimators", "max_depth", "class_weight",
+                                                                    "random_state", "max_features")}
     info = {
-        "model": "RandomForestClassifier",
+        "model": type(final).__name__,
         "feature_set": "body40",
         "window": "whole",
         "sequence_steps": STEPS,
         "frame_features": FRAME_FEATURES,
-        "n_features": len(COLUMNS),
+        "sequence_extras": extras,
+        "n_features": len(names),
         "classes": classes,
         "class_info": {c: {"label": acts[c]["action_label"], "name_ko": acts[c]["name_ko"],
                            "category": acts[c].get("category", "")} for c in classes},
-        "rf_params": {k: v for k, v in CFG["model"].items() if k != "type"},
+        "model_params": params,
         "pose": {"model": PROJECT["pose_model"], "image_size": PROJECT["image_size"],
                  "person_confidence": PROJECT["person_confidence"],
                  "keypoint_confidence": PROJECT["keypoint_confidence"]},
@@ -151,9 +167,9 @@ def main() -> None:
         "sklearn_version": sklearn.__version__,
         "created_at": datetime.now().isoformat(timespec="seconds"),
     }
-    (OUT / "rf_training_info.json").write_text(json.dumps(info, ensure_ascii=False, indent=2), encoding="utf-8")
-    size = (OUT / "store_anomaly_rf.joblib").stat().st_size / 1e6
-    print(f"saved {OUT.relative_to(ROOT)}: joblib {size:.1f} MB, {len(COLUMNS)} features, {len(classes)} classes")
+    (OUT / "training_info.json").write_text(json.dumps(info, ensure_ascii=False, indent=2), encoding="utf-8")
+    size = (OUT / "action_model.joblib").stat().st_size / 1e6
+    print(f"saved {OUT.relative_to(ROOT)}: {info['model']} joblib {size:.1f} MB, {len(names)} features, {len(classes)} classes")
     print("학습 영상 길이(s):", info["train_clip_seconds"])
 
 

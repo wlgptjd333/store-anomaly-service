@@ -100,9 +100,10 @@ Sequence CSV (clip 하나 = 파일 하나, 159열)
 | `scripts/12_compare_normalizations.py` | 정규화 5가지 비교 (서 있는 자세 크기 차이, 측면 튐, 사람 단위 5-fold 분류) |
 | `scripts/13_build_sequence_dataset.py` | 입력 점검 + 동작 구간을 30단계로 보간한 고정 길이 Dataset → `reports/dataset/` |
 | `scripts/14_train_baseline.py` | Random Forest 실험 9개 (한 번에 하나씩 바꿈), 혼동 행렬, 틀린 영상, 마지막 Test S05 |
-| `scripts/15_export_service_model.py` | 웹 서비스용 모델 (5명 전부, 기본 정면·측면·뒤 + 좌우 반전) → `artifacts/service/` |
+| `scripts/15_export_service_model.py` | 웹 서비스용 모델 (5명 전부, 기본 정면·측면·뒤 + 좌우 반전, ExtraTrees + 변화량·요약 통계) → `artifacts/service/` |
 | `scripts/16_export_unified_labels.py` | 팀 통일 라벨로 산출물 다시 쓰기 + 같은 결과인지 재학습 확인 → `reports/unified/` |
 | `scripts/17_flip_and_view_check.py` | 좌우 반전 증강 전/후, 학습에 없던 촬영 각도 정확도 → `flip_augmentation.csv`, `view_generalization.csv` |
+| `scripts/19_model_improvement.py` | 서비스 모델 정확도 올리기 (Feature 덧붙이기 × RF·ExtraTrees·SVM, S01~S04 4-fold 로 고름) → `model_improvement_*.csv` |
 | `scripts/18_back_view_experiments.py` | 뒷모습을 학습에 넣었을 때 (정면·측면·뒤 따로, 좌우 반전, 얼굴 관절 빼기, 동작별) → `back_view_*.csv`, `docs/images/back_view_summary.png` |
 | `scripts/08_draw_skeleton_figure.py` | 동작별 뼈대 그림 (영상·얼굴 없이) → `docs/images/actions_skeleton.png` |
 | `scripts/video_hub.py` | 같은 와이파이에서 팀원 핸드폰 영상을 모으는 업로드 서버 (표준 라이브러리만) |
@@ -171,6 +172,7 @@ python scripts/14_train_baseline.py
 python scripts/16_export_unified_labels.py          # 팀 통일 라벨 산출물 (재학습으로 같은 결과 확인)
 python scripts/17_flip_and_view_check.py            # 좌우 반전·촬영 각도
 python scripts/18_back_view_experiments.py          # 뒷모습 추가 실험 (약 4분)
+python scripts/19_model_improvement.py             # 서비스 모델 Feature·모델 비교 (약 3분)
 python scripts/07_render_overlay.py --subject S04   # YOLO 다시 안 돌림, 영상 1개 약 10초
 ```
 
