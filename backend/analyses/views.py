@@ -5,6 +5,7 @@
   GET    /api/analyses/{id}/         상세 + 사람별 결과
   PATCH  /api/analyses/{id}/         제목·메모만 수정
   DELETE /api/analyses/{id}/         기록 삭제 (사람별 예측은 CASCADE, 원본·재생용 영상 파일도 함께 지움)
+                                     분석 중(대기·진행)이면 409 — Worker 가 결과를 저장하다 실패하지 않게
   영상 보기는 HTML 쪽 /analyses/{id}/video/ (권한 확인 + 구간 이동용 Range, page_views.video)
   GET    /api/analyses/{id}/status/  상태만 (브라우저가 주기적으로 조회)
 """
@@ -52,9 +53,15 @@ class AnalysisJobViewSet(viewsets.ModelViewSet):
         super().update(request, *args, **kwargs)
         return Response(AnalysisJobSerializer(self.get_object(), context=self.get_serializer_context()).data)
 
-    def perform_destroy(self, instance):
+    def destroy(self, request, *args, **kwargs):
+        job = self.get_object()
+        if not job.is_finished:
+            # 지우면 Celery Worker 가 끝날 때 결과 저장이 실패하고, 쓰던 영상 파일도 사라진다
+            return Response({"detail": "분석 중인 작업은 삭제할 수 없습니다. 완료되거나 실패한 뒤 삭제하세요."},
+                            status=status.HTTP_409_CONFLICT)
         # PersonPrediction 은 on_delete=CASCADE, 원본·재생용 영상 파일은 models.delete_video_files(post_delete)가 지움
-        instance.delete()
+        job.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=True, methods=["get"])
     def status(self, request, pk=None):

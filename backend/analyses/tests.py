@@ -172,6 +172,17 @@ class AnalysisApiTests(CleanTestCase):
         self.assertFalse(PersonPrediction.objects.filter(job_id=job.pk).exists())
         self.assertFalse(storage.exists(name))
 
+    def test_delete_blocked_while_running(self):
+        for state in (AnalysisJob.Status.PENDING, AnalysisJob.Status.STARTED):
+            job = AnalysisJob.objects.create(user=self.a, input_type="UPLOAD", status=state)
+            res = self.api.delete(f"/api/analyses/{job.pk}/")
+            self.assertEqual(res.status_code, 409)
+            self.assertIn("분석 중", res.data["detail"])
+            self.assertTrue(AnalysisJob.objects.filter(pk=job.pk).exists())
+            job.status = AnalysisJob.Status.FAILURE
+            job.save(update_fields=["status"])
+            self.assertEqual(self.api.delete(f"/api/analyses/{job.pk}/").status_code, 204)
+
 
 @override_settings(MEDIA_ROOT=TMP_MEDIA)
 class DashboardTests(CleanTestCase):

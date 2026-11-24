@@ -362,8 +362,12 @@
     async remove() {
       const id = Util.$("#detail").dataset.jobId;
       if (!confirm(`분석 #${id} 기록과 사람별 결과, 영상 파일을 삭제할까요? 되돌릴 수 없습니다.`)) return;
-      await Data.remove(id);
-      location.href = "/";
+      try {
+        await Data.remove(id);
+        location.href = "/";
+      } catch (ex) {                              // 409: 아직 분석 중
+        Util.$("#edit-message").textContent = Util.errorText(ex);
+      }
     },
   };
 

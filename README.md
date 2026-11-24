@@ -82,7 +82,7 @@ docker compose exec django python manage.py createsuperuser
 모델 파일 복사(1D-CNN 포함), Feature·모델 코드가 두 저장소에서 같은지 확인, Pose 모델 일치 확인, fastapi 다시 빌드(모델이 이미지 안에 들어감), `/health`·E2E 확인까지 합니다.
 영상 추가부터 전체 순서는 데이터 저장소 [Runbook](https://github.com/wlgptjd333/unmanned-store-anomaly/blob/main/docs/RETRAIN_RUNBOOK.md).
 
-로컬(도커 없이) 확인: `bash scripts/check.sh` — 린트(`ruff.toml`) · JS 문법 · Django check · migration 누락 · 단위 테스트 41개(SQLite·가짜 AI 서버).
+로컬(도커 없이) 확인: `bash scripts/check.sh` — 린트(`ruff.toml`) · JS 문법 · Django check · migration 누락 · 단위 테스트 44개(SQLite·가짜 AI 서버).
 GitHub 에서도 push 마다 같은 확인이 돕니다 (`.github/workflows/ci.yml`, 위 check 배지). Docker 안에서는 `docker compose exec django python manage.py test`.
 
 **녹화 영상 꺼내기 (재학습용)**: 분석에 쓴 영상 원본은 Docker 볼륨(`media`) 안에 있어 탐색기로 바로 안 보입니다.
@@ -425,7 +425,7 @@ Excel 에서 한글이 깨지지 않게 BOM 을 붙이고, `=`·`+`·`-`·`@` �
 | T04 사람별 결과 | SBU 2인 영상 2개 | 작업 1건에 Track 1·2 각각 저장 |
 | T05 비동기 | 업로드 POST 응답 시간 | 0.02~0.5초에 202 + 작업 ID (분석은 9~22초 뒤 완료) |
 | T06 영구 저장 | 새로고침·상세 재조회 | 같은 결과 |
-| T07 CRUD 권한 | 회원 B 가 A 의 작업 조회/수정/삭제 | 404 / 404 / 404, B 목록 0건. A 의 PATCH 는 제목·메모만, PUT 405 |
+| T07 CRUD 권한 | 회원 B 가 A 의 작업 조회/수정/삭제 | 404 / 404 / 404, B 목록 0건. A 의 PATCH 는 제목·메모만, PUT 405, 분석 중(대기·처리 중) 삭제는 409 |
 | T08 관리자 | admin 으로 `/dashboard/`, 일반 회원 | 200 / 관리자 로그인으로 이동 |
 | 추가: 영상 확인 (11/24 밤) | Docker 에서 업로드 → 결과 화면, `Range: bytes=0-99`, 다른 회원·관리자로 영상 주소, 옛 기록 `make_playback` | 완료와 함께 재생용 사본(14.1 MB → 0.08 MB, 1.1초), 206 `bytes 0-99/80667`, 404 / 200(관리자 읽기 전용), 옛 기록 33개 사본 생성(손상 파일 10개는 건너뜀) |
 | 추가: 대시보드 조건 (11/24 밤) | 기간·상태·판단 불확실·일치·회원·검색·쪽·CSV | 단위 테스트 `DashboardToolsTests` + Docker 에서 `/dashboard/?period=today&status=SUCCESS`·`?export=csv` 200 |
@@ -433,8 +433,8 @@ Excel 에서 한글이 깨지지 않게 BOM 을 붙이고, `=`·`+`·`-`·`@` �
 | T09 추가 (11/24) | 휴대폰 앱이 꺼진 상태로 IP Webcam 요청 · 사람 없는 4초 영상 · 사람이 0.25초만 나온 영상 · Worker 를 멈춘 채 요청 | FAILURE "카메라 'phone'에 연결하지 못했습니다…"(5초) · SUCCESS + "영상에서 사람을 찾지 못했습니다" · SUCCESS + "판단하지 못했습니다: 화면에 0.2초만 보여…" · 10초 동안 PENDING 유지 → Worker 재시작 뒤 SUCCESS |
 | T10 Docker 재시작 | `docker compose down` → `up` (11/24 ExtraTrees 모델로 다시) | 작업 32건·사람별 예측 24건·상태별 건수 그대로, 재시작 뒤 새 분석(A009 앞으로 눕기) SUCCESS·일치 |
 
-Django 단위 테스트 41개(`backend/accounts/tests.py`, `backend/analyses/tests.py`)는 AI 서버·카메라·ffmpeg 를 가짜로 바꿔 위 흐름을 확인합니다
-(카메라 주소 검사·관리자 권한·실시간 중계·장면 저장·자동 감지 조건 13개, 영상 재생·Range·사본·삭제 6개, 대시보드 조건·쪽·CSV 4개 포함).
+Django 단위 테스트 44개(`backend/accounts/tests.py`, `backend/analyses/tests.py`)는 AI 서버·카메라·ffmpeg 를 가짜로 바꿔 위 흐름을 확인합니다
+(카메라 주소 검사·관리자 권한·실시간 중계·장면 저장·자동 감지 조건 13개, 영상 재생·Range·사본·삭제 7개(분석 중 삭제 409 포함), 녹화 꺼내기 2개, 대시보드 조건·쪽·CSV 4개 포함).
 리팩터링(공통 함수로 모으기) 전·후로 S04 영상 2개의 AI 예측이 동작·Confidence·창·유효 Frame 까지 같은지도 확인했습니다 ([docs/PIPELINE.md 6](docs/PIPELINE.md#6-한-곳에-모아-둔-공통-코드-리팩터링)).
 
 ### 만난 오류와 해결
@@ -447,7 +447,7 @@ Django 단위 테스트 41개(`backend/accounts/tests.py`, `backend/analyses/tes
 | 휴대폰 IP Webcam 서버를 켰는데 `카메라 'phone'에 연결하지 못했습니다` | 브라우저로는 휴대폰 주소가 열림 → `.env` 의 `IPWEBCAM_CAMERAS` 가 예시 주소 `192.168.0.10` 그대로 | 주소를 고치는 김에, 주소를 DB 카메라 표로 옮기고 관리자가 웹에서 수정·연결 확인하게 바꿈 (내부망 IP 만) | Celery 컨테이너에서 Frame 수신, 화면 '연결 확인' 640×480 |
 | 결과 화면에서 IP Webcam 녹화본·실시간 장면 저장 영상이 재생되지 않음 (검은 칸) | 파일은 정상, OpenCV 가 `mp4v`(MPEG-4 Part 2)로 저장 → Chrome·Edge `<video>` 미지원. 건너뛰기도 안 됨(Range 미지원) | 원본은 그대로 두고 Celery 가 ffmpeg 로 H.264 사본을 만들고, 권한 확인 + Range 응답 뷰로 보냄 | Edge 에서 재생·구간 이동 확인, 단위 테스트 206/416 |
 | 실시간 보기에서는 잘 맞는데 'AI 분석 시작' 결과는 A009·A010 (눕기) 로 나옴 | 저장된 8초 영상을 Frame 별로 열어 봄 → ① 휴대폰을 세로로 들어 영상이 90° 누워 있음 ② 버튼 뒤 7~8초 대기열에서 기다리다 녹화 시작(앞 작업 2개 + 실시간 보기와 CPU 공유) → 동작이 녹화 전에 끝남 | 카메라 '화면 회전' 설정, 화면에 '지금 녹화 중' 표시, 실시간 화면의 최근 8초를 그대로 저장하는 '이 장면 저장'·자동 감지 추가 | 같은 영상을 똑바로 돌려 다시 분석하니 눕기 예측이 사라지고 고른 동작 A003 이 1위(#43)·3위(#42)로 올라옴, 장면 저장 E2E 통과 |
-| Docker 안에서 단위 테스트 25개가 `camera name` 중복으로 실패 (밖에서는 통과) | 오류 내용 → migration `0002` 가 `.env` 의 `IPWEBCAM_CAMERAS` 를 테스트 DB 에도 옮겨 넣음 | 테스트 공통 부모 `CleanTestCase` 가 빈 카메라 표에서 시작, `scripts/check.sh` 는 환경변수를 비우고 실행 | 도커 안·밖·CI 모두 41개 통과 |
+| Docker 안에서 단위 테스트 25개가 `camera name` 중복으로 실패 (밖에서는 통과) | 오류 내용 → migration `0002` 가 `.env` 의 `IPWEBCAM_CAMERAS` 를 테스트 DB 에도 옮겨 넣음 | 테스트 공통 부모 `CleanTestCase` 가 빈 카메라 표에서 시작, `scripts/check.sh` 는 환경변수를 비우고 실행 | 도커 안·밖·CI 모두 통과 (지금 44개) |
 
 ## 폴더 구조
 
