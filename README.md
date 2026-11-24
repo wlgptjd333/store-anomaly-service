@@ -10,6 +10,8 @@ Vision AI 과정 2D 자세추정 수업에서 시작했고, 학습 영상은 3�
 왜 이렇게 만들었는지(원본을 그대로 둔 이유, YOLO 를 고른 이유, 정규화·라벨·구간·개인정보 결정)는 [기술 결정 기록](docs/DESIGN_DECISIONS.md)에 숫자와 함께 적었습니다.
 정규화 방식 비교(수업의 이미지 기준 vs 몸 기준)는 [정규화 비교 분석](docs/NORMALIZATION_ANALYSIS.md), 동작 분류 Baseline(수업 6일차 방식 vs 3팀 방식)은 [Baseline 성능평가](docs/BASELINE_EVALUATION.md), 전체 문서 목록은 [docs/README.md](docs/README.md).
 
+**영상을 더 찍거나 다시 학습해서 서비스 모델을 바꿀 때는 [Runbook](docs/RETRAIN_RUNBOOK.md) 순서대로** (사람이 적는 칸, 새 사람·새 방향 넣는 법, 서비스 `update_model.sh` 까지).
+
 ## 동작 17개
 
 | ID | 동작 | 분류 |
@@ -67,7 +69,7 @@ Vision AI 과정 2D 자세추정 수업에서 시작했고, 학습 영상은 3�
   - 동작: `A01`→`A001` … `A17`→`A017` (예: A13 테이블 내려치기 = `shotgun`, A15 = `fall_sideways`)
 - 변환: `scripts/16_export_unified_labels.py` → [`reports/unified/`](reports/unified/) (영상 목록·구간·Split·예측·동작별 F1·사람 검수)
 - 확인: 통일 번호로 다시 학습해도 **영상마다 예측이 같고 정확도도 같습니다** ([`verify_same_results.csv`](reports/unified/verify_same_results.csv): 구간 모델 Val 76.5% / Test 70.6%, 영상 전체 모델 Val 73.5% / Test 61.8%).
-- 웹 서비스(store-anomaly-service)의 동작 이름은 발표(교과10 10일차) 뒤에 통일 이름으로 바꿀 예정입니다.
+- 웹 서비스(store-anomaly-service) 화면의 동작 이름은 아직 이 저장소 이름(위 17개 표)을 씁니다. 이름은 `scripts/01_build_manifest.py` 의 `ACTIONS` → `configs/action_classes.csv` → 서비스 `training_info.json` 순서로 들어갑니다.
 
 ## Pipeline
 
@@ -87,9 +89,9 @@ Sequence CSV (clip 하나 = 파일 하나, 159열)
 
 | 파일 | 하는 일 |
 |---|---|
-| `scripts/01_build_manifest.py` | 팀 드라이브 영상 → clip_id·Manifest (`--copy` 로 영상 복사) |
+| `scripts/01_build_manifest.py` | 팀 드라이브 영상 → clip_id·Manifest (`--copy` 로 영상 복사, `--unified-views` 로 통일 이름 영상 읽을 방향) |
 | `scripts/02_check_videos.py` | 모든 MP4 디코딩 검사 → `reports/tables/video_inventory.csv` |
-| `scripts/03_build_sequences.py` | Frame별 Feature → `reports/sequences/<clip_id>_sequence.csv` (`--clip`, `--all`, `--save-video`) |
+| `scripts/03_build_sequences.py` | Frame별 Feature → `reports/sequences/<clip_id>_sequence.csv` (`--clip`, `--all`, `--save-video`, 새 영상만 `--skip-existing`, 실험용 `--pose-model` `--max-fps` `--out-dir` `--approved`) |
 | `scripts/04_make_review_sheets.py` | 라벨 검수 그림 → `reports/review/`, 점검표 → `reports/tables/review_checklist.csv` |
 | `scripts/05_summarize_sequences.py` | 영상별 QA → `reports/tables/sequence_qa.csv` |
 | `scripts/06_estimate_segments.py` | 동작 시작·끝 자동 추정 → `reports/tables/segments_auto.csv` (누움·앉음 동작은 일어나기 직전까지, `--sheets` 로 확인 그림) |
@@ -98,12 +100,13 @@ Sequence CSV (clip 하나 = 파일 하나, 159열)
 | `scripts/10_build_approved_manifest.py` | Human QA PASS 만 → `configs/approved_clip_manifest.csv` (동작 구간 포함) |
 | `scripts/11_build_subject_split.py` | 사람 단위 Train / Validation / Test + Leakage 검사 → `reports/splits/` (LOSO 5-fold 포함) |
 | `scripts/12_compare_normalizations.py` | 정규화 5가지 비교 (서 있는 자세 크기 차이, 측면 튐, 사람 단위 5-fold 분류) |
-| `scripts/13_build_sequence_dataset.py` | 입력 점검 + 동작 구간을 30단계로 보간한 고정 길이 Dataset → `reports/dataset/` |
+| `scripts/13_build_sequence_dataset.py` | 입력 점검 + 동작 구간을 30단계로 보간한 고정 길이 Dataset → `reports/dataset/` (실험용 `--steps` `--smooth` `--seq-dir` `--out-dir`) |
 | `scripts/14_train_baseline.py` | Random Forest 실험 9개 (한 번에 하나씩 바꿈), 혼동 행렬, 틀린 영상, 마지막 Test S05 |
 | `scripts/15_export_service_model.py` | 웹 서비스용 모델 (5명 전부, 기본 정면·측면·뒤 + 좌우 반전, ExtraTrees + 변화량·요약 통계) → `artifacts/service/` |
 | `scripts/16_export_unified_labels.py` | 팀 통일 라벨로 산출물 다시 쓰기 + 같은 결과인지 재학습 확인 → `reports/unified/` |
 | `scripts/17_flip_and_view_check.py` | 좌우 반전 증강 전/후, 학습에 없던 촬영 각도 정확도 → `flip_augmentation.csv`, `view_generalization.csv` |
 | `scripts/19_model_improvement.py` | 서비스 모델 정확도 올리기 (Feature 덧붙이기 × RF·ExtraTrees·SVM, S01~S04 4-fold 로 고름) → `model_improvement_*.csv` |
+| `scripts/20_more_improvements.py` | 19번 모델에서 더 올리기 (Pose 11n·11s·11m, 단계 수, 떨림 줄이기, 좌우 반전 평균, 나무 설정, ET+SVM, 시간 자르기 증강) → `more_improvements_cv.csv` |
 | `scripts/18_back_view_experiments.py` | 뒷모습을 학습에 넣었을 때 (정면·측면·뒤 따로, 좌우 반전, 얼굴 관절 빼기, 동작별) → `back_view_*.csv`, `docs/images/back_view_summary.png` |
 | `scripts/08_draw_skeleton_figure.py` | 동작별 뼈대 그림 (영상·얼굴 없이) → `docs/images/actions_skeleton.png` |
 | `scripts/video_hub.py` | 같은 와이파이에서 팀원 핸드폰 영상을 모으는 업로드 서버 (표준 라이브러리만) |
@@ -152,6 +155,16 @@ Sequence CSV (clip 하나 = 파일 하나, 159열)
 
 ![뒷모습 실험](docs/images/back_view_summary.png)
 
+- **서비스 모델 (11/24, [5-3](docs/BASELINE_EVALUATION.md)·[5-4](docs/BASELINE_EVALUATION.md)):** 고르는 건 S01~S04 4-fold, Test S05 는 확인만
+
+  | 모델 (정면·측면·뒤 + 좌우 반전, 영상 전체) | 4-fold | Validation S04 | Test S05 |
+  |---|---:|---:|---:|
+  | Random Forest 300 | 71.9 | 70.6 | 71.9 |
+  | **ExtraTrees 1000 + 변화량·요약 통계 (지금 서비스)** | **82.4** | **88.2** | **78.4** |
+
+  - 같은 30fps 에서 Pose 11n 81.5 · 11s 82.7 · 11m 83.5 — 11m 은 CPU 4배라 11n 유지. 단계 수·떨림 줄이기·TTA·나무 설정·SVM 섞기·시간 자르기 증강은 모두 변동 안
+  - 더 올리려면 데이터(약한 동작 A13·A15·A06·A04, 대각선)나 시간 순서 모델
+
 ## 실행
 
 ```bash
@@ -173,6 +186,8 @@ python scripts/16_export_unified_labels.py          # 팀 통일 라벨 산출�
 python scripts/17_flip_and_view_check.py            # 좌우 반전·촬영 각도
 python scripts/18_back_view_experiments.py          # 뒷모습 추가 실험 (약 4분)
 python scripts/19_model_improvement.py             # 서비스 모델 Feature·모델 비교 (약 3분)
+python scripts/20_more_improvements.py             # 더 해 본 방법들 (Pose 크기 비교는 데이터를 먼저 만듦, 스크립트 첫머리 참고)
+python scripts/15_export_service_model.py          # 서비스용 모델 → artifacts/service/ (서비스 저장소 scripts/update_model.sh 로 넣음)
 python scripts/07_render_overlay.py --subject S04   # YOLO 다시 안 돌림, 영상 1개 약 10초
 ```
 
@@ -190,6 +205,8 @@ python scripts/07_render_overlay.py --subject S04   # YOLO 다시 안 돌림, �
 - [x] 뒷모습 85개 촬영·학습 (11/23) — 뒤 39% → 73%, 정면·측면 유지
 - [ ] 뒷모습 85개 사람이 영상으로 라벨 확인 (지금은 자동 QA + 모델 예측 + 8개 직접 확인)
 - [x] 웹 서비스 모델을 "정면·측면·뒤 + 좌우 반전"으로 다시 내보내기 (11/24, Test S05 61.8% → 74.5%)
+- [x] ExtraTrees + 변화량·요약 통계 (11/24, Test S05 74.5% → 78.4%), Pose 크기·기타 조정 비교 (20번, 바꾼 것 없음)
+- [x] 영상 추가·재학습·서비스 교체 [Runbook](docs/RETRAIN_RUNBOOK.md) + 서비스 `scripts/update_model.sh`
 - [ ] 대각선(45°) 촬영
 
 ## 출처

@@ -160,7 +160,7 @@ def main() -> None:
         "body_scale": {"shoulder_ratio": 0.70, "min_px": 5.0},
         "train_clip_seconds": {"min": round(min(secs), 2), "median": round(float(np.median(secs)), 2),
                                "max": round(max(secs), 2)},
-        "trained_on": f"S01~S05 ({len(df)} clips, 17 actions x {len(views)} views x 5 people)",
+        "trained_on": f"{', '.join(sorted(df.subject_id.unique()))} ({len(df)} clips, {df.action_id.nunique()} actions x {len(views)} views x {df.subject_id.nunique()} people)",
         "views": [VIEW_NAMES[v] for v in views],
         "flip_augmentation": flip,
         "evaluation_train_S01_S03": ev,

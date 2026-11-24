@@ -18,6 +18,8 @@ from __future__ import annotations
 #   python scripts/03_build_sequences.py --clip T03_S04_A01_T01_F
 #   python scripts/03_build_sequences.py --clip T03_S04_A01_T01_F --save-video
 #   python scripts/03_build_sequences.py --all
+#   python scripts/03_build_sequences.py --all --approved --pose-model yolo11m-pose.pt --out-dir reports/pose_compare/yolo11m
+#     (Pose 모델 크기 비교용 — 기본 reports/sequences 는 건드리지 않음, 20번 실험)
 # 출력: reports/sequences/<clip_id>_sequence.csv
 #       (--save-video) reports/videos/<clip_id>_skeleton.mp4
 
@@ -70,6 +72,11 @@ def parse_args():
     p.add_argument("--max-frames", type=int, default=0, help="영상마다 최대 Frame 수 (0 = 전체)")
     p.add_argument("--kp-conf", type=float, default=None, help="저신뢰 관절 기준 (기본: project.json)")
     p.add_argument("--save-video", action="store_true", help="Skeleton 을 그린 확인용 영상 저장")
+    p.add_argument("--pose-model", default=None, help="Pose 가중치 (기본: project.json 의 pose_model)")
+    p.add_argument("--out-dir", default=None, help="출력 폴더 (기본: reports). sequences/ 가 그 아래 생김")
+    p.add_argument("--approved", action="store_true", help="--all 일 때 Approved Manifest(학습에 쓰는 영상)만")
+    p.add_argument("--max-fps", type=float, default=0, help="이 FPS 로 줄여 처리 (0 = 모든 Frame, 서비스는 30)")
+    p.add_argument("--skip-existing", action="store_true", help="이미 만든 CSV 는 건너뜀 (중간에 끊겼을 때)")
     return p.parse_args()
 
 
@@ -131,18 +138,21 @@ def frame_row(result, img_w, img_h, kp_conf):
     return row
 
 
-def build(clip, model, cfg, device, kp_conf, max_frames, save_video):
+def build(clip, model, cfg, device, kp_conf, max_frames, save_video, max_fps=0.0):
     path = VIDEOS / clip["video_file"]
     cap = cv2.VideoCapture(str(path))
     if not cap.isOpened():
         raise RuntimeError(f"영상을 열 수 없습니다: {path}")
     fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
     writer, rows, n = None, [], 0
+    step = max(1, round(fps / max_fps)) if max_fps else 1   # 60fps → 30fps 면 2 Frame 마다 1개
     while max_frames <= 0 or n < max_frames:
         ok, frame = cap.read()
         if not ok:
             break
         n += 1
+        if (n - 1) % step:
+            continue
         h, w = frame.shape[:2]
         result = model.predict(source=frame, imgsz=cfg["image_size"], conf=cfg["person_confidence"],
                                device=device, verbose=False)[0]
@@ -213,10 +223,20 @@ def main() -> None:
     cfg = load_config()
     kp_conf = args.kp_conf if args.kp_conf is not None else cfg["keypoint_confidence"]
     device = resolve_device(cfg["device"])
-    model = YOLO(str(ROOT / cfg["pose_model"]))
+    global OUT_DIR
+    if args.out_dir:
+        OUT_DIR = (ROOT / args.out_dir).resolve()
+    if args.all and args.approved:
+        keep = {r["clip_id"] for r in csv.DictReader((ROOT / "configs" / "approved_clip_manifest.csv").open(encoding="utf-8-sig"))}
+        clips = [c for c in clips if c["clip_id"] in keep]
+    if args.skip_existing:
+        clips = [c for c in clips if not (OUT_DIR / "sequences" / f"{c['clip_id']}_sequence.csv").exists()]
+    pose = args.pose_model or cfg["pose_model"]
+    model = YOLO(str(ROOT / pose) if (ROOT / pose).exists() else pose)
+    print(f"Pose 모델 {pose} · 영상 {len(clips)}개 → {OUT_DIR}")
 
     for i, clip in enumerate(clips, 1):
-        out, rows = build(clip, model, cfg, device, kp_conf, args.max_frames, args.save_video)
+        out, rows = build(clip, model, cfg, device, kp_conf, args.max_frames, args.save_video, args.max_fps)
         s = summarize(rows)
         print(f"[{i}/{len(clips)}] {clip['clip_id']} ({clip['action_label']}, {dict(F='정면', S='측면', B='뒤')[clip['view']]})")
         print(f"  Frame {s['frames']} · Pose 성공 {s['pose_ok_ratio']:.1%} · Feature 성공 {s['feature_ok_ratio']:.1%}"

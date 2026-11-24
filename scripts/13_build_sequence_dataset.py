@@ -23,6 +23,7 @@
 """
 from __future__ import annotations
 
+import argparse
 import csv
 import json
 from pathlib import Path
@@ -59,15 +60,39 @@ def resample(values: np.ndarray, times: np.ndarray, steps: int) -> np.ndarray:
     return np.stack([np.interp(tx, x, values[:, j]) for j in range(values.shape[1])], 1)
 
 
+def smooth(values: np.ndarray, k: int) -> np.ndarray:
+    """유효 Frame 만 모은 (T, F) 를 시간 방향 이동 평균 (k Frame, 가장자리는 있는 만큼만). k<=1 이면 그대로."""
+    if k <= 1 or len(values) < 2:
+        return values
+    out = np.empty_like(values)
+    h = k // 2
+    for i in range(len(values)):
+        out[i] = values[max(0, i - h): i + h + 1].mean(0)
+    return out
+
+
+def parse_args():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--seq-dir", default=None, help="03번 결과 폴더 (기본: Manifest 의 sequence_file 경로)")
+    ap.add_argument("--out-dir", default=None, help="출력 폴더 (기본: reports/dataset)")
+    ap.add_argument("--steps", type=int, default=None, help="단계 수 (기본: baseline_config 30)")
+    ap.add_argument("--smooth", type=int, default=0, help="보간 전 이동 평균 Frame 수 (0 = 안 함)")
+    return ap.parse_args()
+
+
 def main() -> None:
+    args = parse_args()
     cfg = json.loads(CONFIG.read_text(encoding="utf-8"))
     steps, min_n, min_r = cfg["sequence_steps"], cfg["min_valid_frames"], cfg["min_valid_ratio"]
+    steps = args.steps or steps
+    out_dir = (ROOT / args.out_dir) if args.out_dir else OUT
+    other = bool(args.seq_dir or args.out_dir or args.steps or args.smooth)   # 실험용이면 점검표는 안 덮어씀
     clips = list(csv.DictReader(APPROVED.open(encoding="utf-8-sig")))
     names = [f"t{i:02d}_{f}" for i in range(steps) for f in FRAME_FEATURES] + [f"mid_{f}" for f in FRAME_FEATURES]
     rows = {"segment": [], "whole": []}
     checks = []
     for c in clips:
-        path = ROOT / c["sequence_file"]
+        path = (ROOT / args.seq_dir / Path(c["sequence_file"]).name) if args.seq_dir else ROOT / c["sequence_file"]
         chk = {"clip_id": c["clip_id"], "file_exists": path.exists()}
         if not path.exists():
             checks.append({**chk, "status": "MISSING"})
@@ -87,18 +112,19 @@ def main() -> None:
                 status = f"LOW_{w.upper()}"
                 continue
             sel = m & valid
-            seq = resample(vals[sel], t[sel], steps)
+            seq = resample(smooth(vals[sel], args.smooth), t[sel], steps)
             mid = vals[sel][int(sel.sum()) // 2]
             rows[w].append([c[k] for k in META] + [n_valid] + list(np.round(seq.reshape(-1), 5)) + list(np.round(mid, 5)))
         chk["segment_sec"] = round(float(c["seg_end"]) - float(c["seg_start"]), 2)
         checks.append({**chk, "status": status})
 
-    OUT.mkdir(parents=True, exist_ok=True)
+    out_dir.mkdir(parents=True, exist_ok=True)
     for w, r in rows.items():
-        pd.DataFrame(r, columns=META + ["n_valid_frames"] + names).to_csv(OUT / f"sequence_dataset_{w}.csv", index=False)
+        pd.DataFrame(r, columns=META + ["n_valid_frames"] + names).to_csv(out_dir / f"sequence_dataset_{w}.csv", index=False)
         print(f"{w}: {len(r)} clips × {len(names)} features ({steps} × {len(FRAME_FEATURES)} + 가운데 Frame {len(FRAME_FEATURES)})")
     ck = pd.DataFrame(checks)
-    ck.to_csv(CHECK, index=False, encoding="utf-8-sig")
+    if not other:
+        ck.to_csv(CHECK, index=False, encoding="utf-8-sig")
     print(ck["status"].value_counts().to_string())
     print("segment 유효 Frame: 최소 %d, 중앙값 %d, 유효 비율 최소 %.3f" % (
         ck["segment_valid"].min(), ck["segment_valid"].median(), ck["segment_valid_ratio"].min()))

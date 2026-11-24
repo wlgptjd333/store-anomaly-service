@@ -34,3 +34,5 @@ reports/segments/
 
 # 서비스용 모델 (웹 서비스 저장소 store-anomaly-service 에서 사용)
 artifacts/**/*.joblib
+reports/pose_compare/
+reports/experiments/

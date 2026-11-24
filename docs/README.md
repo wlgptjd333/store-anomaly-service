@@ -5,9 +5,10 @@
 | 순서 | 문서 | 내용 |
 |---|---|---|
 | 1 | [프로젝트 README](../README.md) | 문제, 동작 17개, 데이터, Pipeline, 지금까지 결과 |
-| 2 | [기술 결정 기록](DESIGN_DECISIONS.md) | 결정 11개마다 다른 방법 / 고른 이유 / 근거 숫자 / 한계 |
+| 2 | [기술 결정 기록](DESIGN_DECISIONS.md) | 결정 14개마다 다른 방법 / 고른 이유 / 근거 숫자 / 한계 |
 | 3 | [정규화 비교 분석](NORMALIZATION_ANALYSIS.md) | 이미지 기준 vs 어깨 폭 vs 몸 크기 — 다른 날 촬영한 사람에서 38% vs 68% |
 | 4 | [Baseline 성능평가](BASELINE_EVALUATION.md) | 수업 6일차 Random Forest — 수업 그대로 55.9% vs 3팀 70.6% (다른 날 촬영 Test), 한 번에 하나씩 바꾼 실험 9개, 틀린 영상 추적 |
+| 5 | [Runbook: 영상 추가·다시 학습·서비스 모델 교체](RETRAIN_RUNBOOK.md) | 순서, 사람이 적는 칸, 새 사람·새 방향, 실험 추가, `update_model.sh`, 자주 막히는 곳 |
 
 ## 데이터 흐름과 산출물
 

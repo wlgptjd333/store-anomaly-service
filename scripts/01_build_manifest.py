@@ -12,6 +12,10 @@ from __future__ import annotations
 #   - 같은 사람·동작·방향을 다시 찍었으면 Take 번호를 T01, T02 ... 로 붙임.
 #   - 2026-11-23 뒷모습 재촬영: "공유 자료/S0x/S0x_A0xx_T03.mp4" (팀 통일 번호, T03 = 뒤)
 #     → configs/unified_label_map.csv 로 이 저장소 번호로 되돌려 view "B" 로 붙임 (T03_S0x_A0x_T01_B)
+#   - 앞으로 더 찍는 영상도 같은 통일 이름으로 "공유 자료/S0x/" 에 올리면 된다 (docs/RETRAIN_RUNBOOK.md).
+#     --unified-views 로 어떤 방향을 거기서 읽을지 고름 (기본 T03. 정면·측면 T01·T02 는 원본 폴더에서 이미 읽으므로 넣지 않음)
+#     같은 사람·동작·방향을 다시 찍었으면 S0x_A0xx_T0y_2.mp4 처럼 뒤에 _2, _3 → Take T02, T03
+#     대응표에 없는 사람(S06 ..)은 번호를 그대로 쓰고, 새 방향은 unified_label_map.csv 에 view 행을 더하면 됨
 # 출력:
 #   configs/action_classes.csv   17개 동작 정의
 #   configs/clip_manifest.csv    MP4 한 개당 한 행 (이름 없음, 가명 S01~)
@@ -78,7 +82,7 @@ SUBJECT_OVERRIDES = {
 }
 
 
-VIEW_KO = {"F": "정면", "S": "측면", "B": "뒤"}
+VIEW_KO = {"F": "정면", "S": "측면", "B": "뒤", "D": "대각선"}
 
 # 라벨 검수(2026-11-17)에서 확인한 실제 촬영 모습 — 이름과 다른 동작만 적음
 FILMED_AS = {
@@ -92,7 +96,8 @@ def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--source", default=DEFAULT_SOURCE, help="사람별 폴더가 있는 원본 영상 폴더")
     p.add_argument("--copy", action="store_true", help="T03 이름으로 data/ 아래에 복사")
-    p.add_argument("--back-source", default=BACK_SOURCE, help="뒷모습(통일 번호 *_T03.mp4) 폴더, 빈 문자열이면 안 씀")
+    p.add_argument("--back-source", default=BACK_SOURCE, help="통일 번호(S0x/S0x_A0xx_T0y.mp4) 영상 폴더, 빈 문자열이면 안 씀")
+    p.add_argument("--unified-views", default="T03", help="그 폴더에서 읽을 방향 코드, 쉼표로 (예: T03,T04)")
     return p.parse_args()
 
 
@@ -141,17 +146,30 @@ def is_landscape(path: Path) -> bool:
     return w > h
 
 
-def back_clips(source: Path) -> list[dict]:
-    """뒷모습 재촬영분. 파일 이름이 이미 팀 통일 번호(S0x_A0xx_T03)라 순서·시각 추정 없이 번호만 바꾼다."""
+UNIFIED_NAME = re.compile(r"^(S\d\d)_(A\d{3})_(T\d\d)(?:_(\d+))?$")
+
+
+def back_clips(source: Path, views: list[str]) -> list[dict]:
+    """통일 번호(S0x_A0xx_T0y[_n])로 올라온 영상 (11/23 뒷모습부터). 이름에 다 있어서 순서·시각 추정 없이 번호만 바꾼다."""
     m = list(csv.DictReader(UNIFIED_MAP.open(encoding="utf-8-sig")))
     subj = {r["unified_id"]: r["team_repo_id"] for r in m if r["kind"] == "subject"}
     act = {r["unified_id"]: r["team_repo_id"] for r in m if r["kind"] == "action"}
+    view = {r["unified_id"]: r["team_repo_id"] for r in m if r["kind"] == "view"}
+    bad = [v for v in views if v not in view]
+    if bad:
+        sys.exit(f"unified_label_map.csv 에 없는 방향 {bad} — view 행을 먼저 더하세요 (예: view,D,T04,,대각선,)")
     out = []
-    for mp4 in sorted(source.glob("S0?/S0?_A???_T03.mp4")):
-        s, a, _ = mp4.stem.split("_")
+    for mp4 in sorted(source.glob("S??/S??_A???_T??*.mp4")):
+        g = UNIFIED_NAME.match(mp4.stem)
+        if not g or g[3] not in views:
+            continue
+        s, a, v, n = g.groups()
+        if a not in act:
+            sys.exit(f"대응표에 없는 동작 번호: {mp4.name}")
         stamp = datetime.fromtimestamp(mp4.stat().st_mtime).strftime("%Y%m%d_%H%M%S")
-        out.append({"path": mp4, "stamp": stamp, "subject_id": subj[s], "action_id": act[a], "view": "B",
-                    "take_id": "T01", "landscape": False, "note": f"back view (unified {mp4.stem})"})
+        note = f"{VIEW_KO[view[v]]} (unified {mp4.stem})" if view[v] != "B" else f"back view (unified {mp4.stem})"
+        out.append({"path": mp4, "stamp": stamp, "subject_id": subj.get(s, s), "action_id": act[a], "view": view[v],
+                    "take_id": f"T{int(n or 1):02d}", "landscape": False, "note": note})
     return out
 
 
@@ -204,9 +222,10 @@ def main() -> None:
                 c["note"] = (c["note"] + "; " if c["note"] else "") + "reshoot"
 
     if args.back_source:
-        back = back_clips(Path(args.back_source))
+        views = [v.strip() for v in args.unified_views.split(",") if v.strip()]
+        back = back_clips(Path(args.back_source), views)
         clips.extend(back)
-        print(f"뒷모습 {len(back)}개 추가 ({args.back_source})")
+        print(f"통일 번호 영상 {len(back)}개 추가 ({args.back_source}, {','.join(views)})")
 
     labels = {a[0]: a[1] for a in ACTIONS}
     rows = []
@@ -224,8 +243,9 @@ def main() -> None:
 
     # 빠진 정면/측면 표시 (사람 × 동작 × 방향)
     have = {(r["subject_id"], r["action_id"], r["view"]) for r in rows}
-    views = "FSB" if any(r["view"] == "B" for r in rows) else "FS"
-    missing = [(s, a[0], v) for s in sorted(set(subjects.values())) for a in ACTIONS for v in views
+    views = [v for v in VIEW_KO if any(r["view"] == v for r in rows)]
+    people = sorted(set(subjects.values()) | {r["subject_id"] for r in rows})
+    missing = [(s, a[0], v) for s in people for a in ACTIONS for v in views
                if (s, a[0], v) not in have]
 
     cfg = ROOT / "configs"
@@ -264,10 +284,10 @@ def main() -> None:
             print(f"\r복사 {i}/{len(rows)}", end="", flush=True)
         print()
 
-    print(f"MP4: {len(rows)}개 / 사람 {len(set(subjects.values()))}명 / 동작 {len(ACTIONS)}개")
+    print(f"MP4: {len(rows)}개 / 사람 {len(people)}명 / 동작 {len(ACTIONS)}개")
     by_subject = Counter((r["subject_id"], r["view"]) for r in rows)
-    for s in sorted(set(subjects.values())):
-        print(f"  {s}: 정면 {by_subject[(s, 'F')]} · 측면 {by_subject[(s, 'S')]} · 뒤 {by_subject[(s, 'B')]}")
+    for s in people:
+        print(f"  {s}: " + " · ".join(f"{VIEW_KO[v]} {by_subject[(s, v)]}" for v in views))
     for r in rows:
         if r["note"]:
             print(f"  [참고] {r['clip_id']}: {r['note']}")
