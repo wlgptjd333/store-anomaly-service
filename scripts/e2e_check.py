@@ -2,7 +2,8 @@
 
   python scripts/e2e_check.py <영상.mp4> [<영상2.mp4> ...]
 
-.env 의 DEMO_* 계정을 쓴다. 확인 항목: T02 업로드, T05 즉시 반환, T06 저장, T07 다른 회원 접근, T09 잘못된 파일, T08 대시보드.
+.env 의 DEMO_* 계정을 쓴다. 확인 항목: T02 업로드, T05 즉시 반환, T06 저장, 영상 재생(Range), T07 다른 회원 접근,
+T09 잘못된 파일, T08 대시보드. T09 용 손상 파일 작업은 확인이 끝나면 지운다 (대시보드 실패 건수가 시험 기록으로 늘지 않게).
 """
 from __future__ import annotations
 
@@ -81,13 +82,18 @@ def main() -> None:
             mark = ("일치" if pr["action_id"] == expected else "불일치") if expected else "정답 없음"
             print(f"      track {pr['track_id']}: {pr['action_id']} {pr['action_name_ko']} {pr['confidence']:.2f}"
                   f"{' (불확실)' if pr['uncertain'] else ''} · 수행 {expected} → {mark}")
+        if job.get("video_url"):
+            v = a.get(BASE + job["video_url"], headers={"Range": "bytes=0-99"})
+            print(f"      영상 보기: HTTP {v.status_code} {v.headers.get('Content-Range', '')} · "
+                  f"재생용 사본 {'있음' if job['playback_ready'] else '없음(원본)'}")
 
     bad = ROOT / "scripts" / "_broken.mp4"
     bad.write_bytes(b"this is not a video")
     sub = submit(a, str(bad))
     job = wait(a, sub["body"]["id"])
     bad.unlink()
-    ids.append(job["id"])
+    broken_id = job["id"]
+    ids.append(broken_id)
     print(f"[T09] 손상 파일: HTTP {sub['status_code']} → {job['status']} · {job['error_message']}")
     r = a.post(f"{BASE}/api/analyses/", data={"input_type": "UPLOAD"}, files={"video": ("note.txt", b"x")})
     print(f"[T09] 잘못된 확장자: HTTP {r.status_code} {r.json()}")
@@ -98,6 +104,8 @@ def main() -> None:
         print(f"[T07] B 가 A 의 작업 조회/수정/삭제: {codes} · B 목록 {b.get(BASE + '/api/analyses/').json()['count']}건")
         r = a.patch(url, json={"memo": "e2e 확인", "status": "FAILURE"})
         print(f"[T07] A PATCH 메모: HTTP {r.status_code} · 상태 그대로 {r.json()['status']} · PUT {a.put(url, json={}).status_code}")
+    r = a.delete(f"{BASE}/api/analyses/{broken_id}/")
+    print(f"[정리] 손상 파일 작업 #{broken_id} 삭제 (본인 DELETE): HTTP {r.status_code}")
     adm = login(env["DEMO_ADMIN_USERNAME"], env["DEMO_ADMIN_PASSWORD"])
     print(f"[T08] /dashboard/ 관리자 {adm.get(BASE + '/dashboard/').status_code} · 일반 회원 "
           f"{a.get(BASE + '/dashboard/', allow_redirects=False).status_code}")

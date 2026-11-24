@@ -94,7 +94,7 @@
         <td><span class="badge s-{{ j.status }}">{{ j.get_status_display }}</span></td>
         <td>{{ j.expected_action|default:"-" }}</td>
         <td>{% for p in j.predictions.all %}#{{ p.track_id }} {{ p.action_id }} {{ p.confidence|floatformat:2 }}{% if p.uncertain %} <span class="badge warn">불확실</span>{% endif %}{% if j.expected_action %}{% if p.action_id == j.expected_action %} <span class="badge ok">일치</span>{% endif %}{% endif %}{% if not forloop.last %}<br>{% endif %}{% empty %}{% if j.status == 'FAILURE' %}<span class="error small">{{ j.error_message|truncatechars:34 }}</span>{% else %}-{% endif %}{% endfor %}</td>
-        <td class="nowrap">{% if j.video %}<a href="{% url 'analyses:detail' j.pk %}#video" title="결과 화면에서 영상 보기">▶ 보기</a>{% else %}-{% endif %}</td>
+        <td class="nowrap">{% if j.video and j.status != "FAILURE" or j.playback %}<a href="{% url 'analyses:detail' j.pk %}#video" title="결과 화면에서 영상 보기">▶ 보기</a>{% else %}-{% endif %}</td>
         <td class="nowrap">{% if j.processing_seconds %}{{ j.processing_seconds|floatformat:1 }}초{% else %}-{% endif %}</td>
         <td class="nowrap">{{ j.created_at|date:"m-d H:i" }}</td>
         <td><a class="small" href="{% url 'admin:analyses_analysisjob_change' j.pk %}">Admin</a></td></tr>

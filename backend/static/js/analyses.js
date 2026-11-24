@@ -156,7 +156,7 @@
           <td>${j.expected_action ? Util.esc(j.expected_action_display) : "-"}</td>
           <td>${j.predictions.map(View.predictionLine).join("<br>") || (j.status === "FAILURE" ? `<span class="error">${Util.esc(j.error_message)}</span>` : Util.esc(j.result_message) || "-")}</td>
           <td>${View.badge(j.status)}</td>
-          <td class="nowrap">${j.video_url ? `<a href="/analyses/${j.id}/#video">▶ 보기</a>` : "-"}</td>
+          <td class="nowrap">${Player.playable(j) ? `<a href="/analyses/${j.id}/#video">▶ 보기</a>` : "-"}</td>
           <td class="nowrap">${Util.sec(j.processing_seconds)}</td>
           <td class="nowrap">${Util.time(j.created_at)}</td></tr>`).join("")
         : '<tr><td colspan="8" class="muted">아직 분석 기록이 없습니다.</td></tr>';
@@ -171,7 +171,8 @@
           job.live_snapshot.map((p) => `#${p.track_id} ${View.actionText(p)}`
             + (p.streak_seconds ? ` (${Util.sec(p.streak_seconds)} 이어짐)` : "")).join("<br>")
           + '<br><span class="muted small">아래 결과는 저장한 영상을 업로드와 같은 방법으로 다시 분석한 값입니다 (Track 번호는 다시 매김).</span>']] : []),
-        ["영상", job.video_name ? `${Util.esc(job.video_name)} (${Util.mb(job.video_size)})` : "-"],
+        ["영상", job.video_name ? `${Util.esc(job.video_name)} (${Util.mb(job.video_size)})`
+          + (job.video_url && !Player.playable(job) ? ` · <a href="${job.download_url}">원본 내려받기</a>` : "") : "-"],
         ["수행한 동작(사용자 선택)", job.expected_action ? Util.esc(job.expected_action_display) : "-"],
         ["영상 길이 / AI 처리 시간", `${Util.sec(job.video_seconds)} / ${Util.sec(job.processing_seconds)}`],
         ["요청 / 완료", `${Util.time(job.created_at)} / ${Util.time(job.finished_at)}`],
@@ -185,14 +186,17 @@
 
   // ── Player: 결과 화면의 분석 영상 + 구간별 예측 (누르면 그 시점으로) ──
   const Player = {
+    playable(job) {                               // 실패 + 사본 없음 = 열리지 않는 파일일 가능성 → 플레이어 숨김
+      return Boolean(job.video_url) && (job.status !== "FAILURE" || job.playback_ready);
+    },
     src(job) {                                    // 재생용 사본이 생기면 주소가 바뀌어 새로 받는다
       return `${job.video_url}?v=${job.playback_ready ? "p" : "o"}`;
     },
     show(job) {
       const box = Util.$("#video-box");
       if (!box) return;
-      box.hidden = !job.video_url;
-      if (!job.video_url) { Util.$("#video-windows").innerHTML = ""; return; }
+      box.hidden = !Player.playable(job);
+      if (box.hidden) { Util.$("#video-windows").innerHTML = ""; return; }
       const v = Util.$("#job-video");
       const want = Player.src(job);
       if (v.dataset.src !== want) {               // 상태 조회 때마다 다시 넣으면 재생이 처음으로 돌아감

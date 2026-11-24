@@ -80,7 +80,7 @@ docker compose exec django python manage.py createsuperuser
 모델 파일 복사(1D-CNN 포함), Feature·모델 코드가 두 저장소에서 같은지 확인, Pose 모델 일치 확인, fastapi 다시 빌드(모델이 이미지 안에 들어감), `/health`·E2E 확인까지 합니다.
 영상 추가부터 전체 순서는 데이터 저장소 [Runbook](https://github.com/wlgptjd333/unmanned-store-anomaly/blob/main/docs/RETRAIN_RUNBOOK.md).
 
-로컬(도커 없이) 테스트: `cd backend && pip install -r requirements.txt && python manage.py test` (SQLite·가짜 AI 서버로 31개).
+로컬(도커 없이) 테스트: `cd backend && pip install -r requirements.txt && python manage.py test` (SQLite·가짜 AI 서버로 41개).
 
 ## 3. 전체 아키텍처
 
@@ -284,8 +284,8 @@ sequenceDiagram
   LogisticRegression(63%)·SVM(73~77%)·골반 위치 빼기(-pos)는 더 낮았습니다. 결과 표: 데이터 저장소 `reports/tables/model_improvement_*.csv`.
 - **1D-CNN 을 더한 이유 (21번 실험)**: ExtraTrees 는 30단계를 펼쳐 '몇 번째 단계에 어느 관절이 어디' 를 따로 봐서, 시작이 조금 어긋나면 약합니다.
   1D-CNN 은 필터가 시간 방향으로 미끄러져 '어떤 움직임 모양이 있나' 를 봅니다. 같은 4-fold 규칙(난수 3개)으로
-  ExtraTrees 82.4 → 1D-CNN 84.8 · GRU 79.7 → **ExtraTrees + 1D-CNN 평균 88.6 ± 1.4** (뒷모습 70.6 → 79.9, 가장 낮은 사람 75.2 → 84.3).
-  두 모델이 틀리는 동작이 달라 평균이 둘보다 낫습니다 (A013 샷건 50 → 92%, A002 75 → 100%, 대신 A003 앞차기 92 → 72%).
+  ExtraTrees 82.4 → 1D-CNN 85.0 · GRU 79.7 → **ExtraTrees + 1D-CNN 평균 87.9 ± 0.2** (뒷모습 70.6 → 78.4, 가장 낮은 사람 75.2 → 82.4).
+  두 모델이 틀리는 동작이 달라 평균이 둘보다 낫습니다 (A013 샷건 50 → 89%, A002 75 → 94%, 대신 A003 앞차기 92 → 75%).
   분석 시간은 2.8초 영상 7.3 → 8.1초로 거의 같습니다 (Pose 가 대부분). 결과 표: 데이터 저장소 `reports/tables/temporal_models_*.csv`.
 - **Confidence 기준 30% 를 그대로 둔 이유**: 학습에 없던 사람(S01~S04 4-fold)에서 ExtraTrees + 1D-CNN 의 정답 평균 확률 0.51, 오답 0.32.
   30% 위쪽 정확도는 ExtraTrees 만일 때와 같고(95.3 → 95.4%), `판단 불확실` 로 표시되는 비율만 37% → 15% 로 줄어 기준을 바꾸지 않았습니다. 학습에 들어간 영상은 90% 가까이 나오므로 시연 숫자를 정확도로 읽으면 안 됩니다.
@@ -412,7 +412,7 @@ Excel 에서 한글이 깨지지 않게 BOM 을 붙이고, `=`·`+`·`-`·`@` �
 | T08 관리자 | admin 으로 `/dashboard/`, 일반 회원 | 200 / 관리자 로그인으로 이동 |
 | 추가: 영상 확인 (11/24 밤) | Docker 에서 업로드 → 결과 화면, `Range: bytes=0-99`, 다른 회원·관리자로 영상 주소, 옛 기록 `make_playback` | 완료와 함께 재생용 사본(14.1 MB → 0.08 MB, 1.1초), 206 `bytes 0-99/80667`, 404 / 200(관리자 읽기 전용), 옛 기록 33개 사본 생성(손상 파일 10개는 건너뜀) |
 | 추가: 대시보드 조건 (11/24 밤) | 기간·상태·판단 불확실·일치·회원·검색·쪽·CSV | 단위 테스트 `DashboardToolsTests` + Docker 에서 `/dashboard/?period=today&status=SUCCESS`·`?export=csv` 200 |
-| T09 예외 처리 | 손상 파일, `.txt`, 허용 안 된 카메라 URL, Redis·AI 서버 끊김 | FAILURE + 사유 / 400 (DB 저장 전 거절) |
+| T09 예외 처리 | 손상 파일, `.txt`, 허용 안 된 카메라 URL, Redis·AI 서버 끊김 | FAILURE + 사유 / 400 (DB 저장 전 거절) · E2E 는 손상 파일 작업을 확인 뒤 본인 DELETE 로 지움(대시보드 실패 건수가 시험 기록으로 늘지 않게), 실패 + 재생용 사본 없음이면 플레이어 대신 원본 내려받기 링크만 |
 | T09 추가 (11/24) | 휴대폰 앱이 꺼진 상태로 IP Webcam 요청 · 사람 없는 4초 영상 · 사람이 0.25초만 나온 영상 · Worker 를 멈춘 채 요청 | FAILURE "카메라 'phone'에 연결하지 못했습니다…"(5초) · SUCCESS + "영상에서 사람을 찾지 못했습니다" · SUCCESS + "판단하지 못했습니다: 화면에 0.2초만 보여…" · 10초 동안 PENDING 유지 → Worker 재시작 뒤 SUCCESS |
 | T10 Docker 재시작 | `docker compose down` → `up` (11/24 ExtraTrees 모델로 다시) | 작업 32건·사람별 예측 24건·상태별 건수 그대로, 재시작 뒤 새 분석(A009 앞으로 눕기) SUCCESS·일치 |
 
@@ -459,7 +459,7 @@ store-anomaly-service/
 ## 한계
 
 - 학습 데이터가 5명·한 장소라, 다른 사람·다른 카메라 높이·다른 조명에서는 틀릴 수 있습니다 (Test S05 82.4%, 뒷모습은 76.5%).
-  S01~S04 4-fold(지금 모델, 난수 3개)에서 약한 동작: A005 밀치기 64%, A004 잡고 흔들기 67%, A003 앞차기 72% — 서서 팔·다리를 한 번 내미는 동작끼리 헷갈립니다.
+  S01~S04 4-fold(지금 모델, 난수 3개)에서 약한 동작: A005 밀치기 67%, A004 잡고 흔들기 67%, A003 앞차기 75% — 서서 팔·다리를 한 번 내미는 동작끼리 헷갈립니다.
   틀리면 **입력 품질(관절 Conf·유효 Frame) → Pose → Feature → 창 → 모델** 순서로 원인을 봅니다. 결과 표에 입력 품질을 함께 보여 주는 이유입니다.
 - 골반 화면 위치(`hip_x_img`, `hip_y_img`)를 Feature 로 쓰므로, 학습 때와 다른 화면 구도(가로/세로, 카메라 위치)에 약합니다.
 - 실시간 보기는 CPU 처리라 사람이 많을수록 fps 가 떨어지고, 한 번에 세션 하나만 돌립니다. 실시간 보기를 켠 채 분석하면 CPU 를 나눠 써 처리 시간이 2~5배 길어집니다. 8초 창이 다 차기 전(처음 몇 초)의 예측은 짧은 구간 기준이라 흔들립니다.
