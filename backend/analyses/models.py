@@ -2,6 +2,28 @@ from django.conf import settings
 from django.db import models
 
 from .actions import ACTION_CHOICES
+from .cameras import normalize_camera_url, validate_camera_url
+
+
+class Camera(models.Model):
+    """허용한 IP Webcam. 관리자만 등록·수정하고, 일반 사용자는 이름만 고른다 (이유는 cameras.py)."""
+
+    name = models.SlugField("이름", max_length=50, unique=True, help_text="화면에 보이는 이름 (영문·숫자·-_)")
+    url = models.CharField("영상 주소", max_length=200, validators=[validate_camera_url],
+                           help_text="IP Webcam 앱 화면의 주소. 예: 192.168.0.10:8080 → http://192.168.0.10:8080/video")
+    enabled = models.BooleanField("사용", default=True)
+    updated_at = models.DateTimeField("수정 시각", auto_now=True)
+
+    class Meta:
+        ordering = ["name"]
+        verbose_name = verbose_name_plural = "카메라"
+
+    def __str__(self):
+        return self.name
+
+    def clean_fields(self, exclude=None):
+        self.url = normalize_camera_url(self.url)      # Admin 에서 '192.168.x.x:8080' 만 적어도 됨
+        super().clean_fields(exclude)
 
 
 class AnalysisJob(models.Model):

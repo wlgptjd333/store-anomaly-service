@@ -5,7 +5,8 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from routers import predictions
+from routers import live, predictions
+from services.live_session import LiveManager
 from services.model_loader import load_bundle
 
 
@@ -23,13 +24,16 @@ def resolve_device(requested: str):
 async def lifespan(app: FastAPI):
     app.state.bundle = load_bundle()          # 서버 시작 때 한 번만 → 요청마다 재사용
     app.state.device = resolve_device(app.state.bundle.config["device"])
+    app.state.live = LiveManager()            # 실시간 보기 세션 (한 번에 하나)
     yield
+    app.state.live.stop_all()
 
 
 app = FastAPI(title="Store Anomaly Action API",
               description="무인 상점 이상행동 17종 — YOLO Pose + ByteTrack + ExtraTrees",
-              version="1.0.0", lifespan=lifespan)
+              version="1.1.0", lifespan=lifespan)
 app.include_router(predictions.router)
+app.include_router(live.router)
 
 
 @app.get("/health")

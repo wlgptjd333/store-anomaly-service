@@ -1,4 +1,5 @@
 """Django 설정. 비밀값·주소는 모두 환경변수(.env)에서 읽는다 — 코드와 GitHub 에는 넣지 않는다."""
+import ipaddress
 import os
 from pathlib import Path
 
@@ -133,8 +134,12 @@ MAX_UPLOAD_MB = int(os.environ.get("MAX_UPLOAD_MB", "100"))
 ALLOWED_VIDEO_EXTENSIONS = [".mp4", ".mov", ".avi", ".mkv", ".webm"]
 
 # IP Webcam: 허용한 카메라만 이름으로 고른다. 사용자가 임의 URL 을 입력하지 못한다.
-#   IPWEBCAM_CAMERAS="phone=http://192.168.0.10:8080/video,phone2=http://..."
+#   카메라 목록은 DB(analyses.Camera)에 있고 관리자만 웹에서 바꾼다.
+#   IPWEBCAM_CAMERAS 는 처음 migrate 때 한 번 옮겨 담는 초기값: "phone=http://192.168.0.10:8080/video,phone2=..."
 IPWEBCAM_CAMERAS = dict(item.split("=", 1) for item in env_list("IPWEBCAM_CAMERAS") if "=" in item)
+# 관리자가 등록할 수 있는 카메라 주소 범위. Docker 내부망(172.16.0.0/12)·localhost 는 일부러 뺐다
+CAMERA_ALLOWED_NETWORKS = [ipaddress.ip_network(n, strict=False)
+                           for n in env_list("CAMERA_ALLOWED_NETWORKS", "192.168.0.0/16,10.0.0.0/8")]
 CAPTURE_SECONDS = float(os.environ.get("CAPTURE_SECONDS", "8"))
 CAPTURE_CONNECT_TIMEOUT_SECONDS = float(os.environ.get("CAPTURE_CONNECT_TIMEOUT_SECONDS", "10"))
 

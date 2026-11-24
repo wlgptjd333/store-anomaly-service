@@ -1,6 +1,13 @@
 from django.contrib import admin
 
-from .models import AnalysisJob, PersonPrediction
+from .models import AnalysisJob, Camera, PersonPrediction
+
+
+@admin.register(Camera)
+class CameraAdmin(admin.ModelAdmin):
+    list_display = ["name", "url", "enabled", "updated_at"]
+    list_editable = ["url", "enabled"]
+    search_fields = ["name", "url"]
 
 
 class PersonPredictionInline(admin.TabularInline):

@@ -36,6 +36,7 @@
       const data = err?.response?.data;
       if (!data) return "서버에 연결하지 못했습니다.";
       if (typeof data === "string") return data.slice(0, 200);
+      if (data.detail || data.message) return data.detail || data.message;
       return Object.values(data).flat().join(" ");
     },
     uncertainBelow() {
@@ -53,6 +54,16 @@
     status: (id) => http.get(`${Config.api}${id}/status/`).then((r) => r.data),
     update: (id, body) => http.patch(`${Config.api}${id}/`, body).then((r) => r.data),
     remove: (id) => http.delete(`${Config.api}${id}/`),
+    // 카메라 (일반 사용자는 이름만, 관리자는 주소까지)
+    cameras: () => http.get("/api/cameras/").then((r) => r.data),
+    addCamera: (body) => http.post("/api/cameras/", body).then((r) => r.data),
+    saveCamera: (id, body) => http.patch(`/api/cameras/${id}/`, body).then((r) => r.data),
+    deleteCamera: (id) => http.delete(`/api/cameras/${id}/`),
+    checkCamera: (id) => http.post(`/api/cameras/${id}/check/`).then((r) => r.data),
+    // 실시간 보기 (보기용, DB 에 남기지 않음)
+    liveStart: (camera_name) => http.post("/api/live/", { camera_name }).then((r) => r.data),
+    liveState: (sid) => http.get(`/api/live/${sid}/`).then((r) => r.data),
+    liveStop: (sid) => http.delete(`/api/live/${sid}/`),
   };
 
   // ── View ──
@@ -211,11 +222,183 @@
     },
   };
 
+  // ── 실시간 보기: <img> 는 MJPEG 를 계속 받고, 사람별 예측은 1초마다 JSON 으로 ──
+  const Live = {
+    sid: null,
+    timer: null,
+    pollMs: 1000,
+    stateKo: { connecting: "연결 중", running: "실시간", stopped: "멈춤", error: "오류" },
+    message(text, isError = true) {
+      const el = Util.$("#live-message");
+      el.textContent = text || "";
+      el.className = isError ? "error" : "muted";
+      el.hidden = !text;
+    },
+    badge(state) {
+      const cls = { running: "s-SUCCESS", connecting: "s-STARTED", error: "s-FAILURE" }[state] || "";
+      Util.$("#live-badge").innerHTML = state ? `<span class="badge ${cls}">${Live.stateKo[state] ?? state}</span>` : "";
+    },
+    people(snap) {
+      const body = Util.$("#live-people tbody");
+      if (!snap.people.length) {
+        body.innerHTML = `<tr><td colspan="3" class="muted">${snap.state === "running" ? "화면에 사람이 없습니다." : "카메라에 연결하는 중…"}</td></tr>`;
+        return;
+      }
+      body.innerHTML = snap.people.map((p) => {
+        if (p.status !== "ok") {
+          return `<tr><td>#${p.track_id}</td><td class="muted">판단 중… (${Util.sec(p.seen_seconds)} 보임)<br><span class="small">${Util.esc(p.reason)}</span></td><td>-</td></tr>`;
+        }
+        const top3 = p.top3.slice(1).map((t) => `${Util.esc(t.action_id)} ${Util.esc(t.action_name_ko)} ${Util.pct(t.probability)}`).join(" · ");
+        return `<tr class="${p.uncertain ? "uncertain" : ""}">
+          <td>#${p.track_id}</td>
+          <td><strong>${Util.esc(p.action_id)} ${Util.esc(p.action_name_ko)}</strong><br><span class="muted small">다음 후보: ${top3}</span></td>
+          <td><div class="bar"><span style="width:${(p.confidence * 100).toFixed(0)}%"></span></div>${Util.pct(p.confidence)}${p.uncertain ? '<br><span class="badge warn">판단 불확실</span>' : ""}</td></tr>`;
+      }).join("");
+    },
+    async start() {
+      const select = Util.$("#camera-select");
+      if (!select || !select.value) { Live.message("카메라를 먼저 고르세요."); return; }
+      const btn = Util.$("#live-btn");
+      btn.disabled = true;
+      Live.message("");
+      try {
+        const snap = await Data.liveStart(select.value);
+        Live.sid = snap.session_id;
+        Util.$("#live-img").src = `/live/${Live.sid}/stream/?t=${Date.now()}`;
+        Util.$("#live-body").hidden = false;
+        btn.textContent = "실시간 보기 멈춤";
+        Live.render(snap);
+        Live.timer = setInterval(Live.poll, Live.pollMs);
+      } catch (ex) {
+        Live.message(Util.errorText(ex));
+      } finally {
+        btn.disabled = false;
+      }
+    },
+    async poll() {
+      if (!Live.sid) return;
+      try {
+        Live.render(await Data.liveState(Live.sid));
+      } catch (ex) {
+        Live.end(ex?.response?.status === 404 ? "실시간 세션이 끝났습니다. 다시 시작하세요." : Util.errorText(ex));
+      }
+    },
+    render(snap) {
+      Live.badge(snap.state);
+      Live.people(snap);
+      Util.$("#live-meta").textContent = snap.width
+        ? `${snap.camera} · ${snap.width}×${snap.height} · 처리 ${snap.fps} fps · ${Util.sec(snap.running_seconds)} 경과`
+        : `${snap.camera} · 연결 중…`;
+      if (snap.state === "error" || snap.state === "stopped") Live.end(snap.message, snap.state === "error");
+    },
+    end(text, isError = true) {
+      clearInterval(Live.timer);
+      Live.timer = null;
+      Live.sid = null;
+      Util.$("#live-img").removeAttribute("src");        // 스트림 연결 끊기
+      Util.$("#live-btn").textContent = "실시간 보기 시작";
+      if (text) Live.message(text, isError);
+    },
+    async stop() {
+      const sid = Live.sid;
+      Live.end("");
+      Live.badge("stopped");
+      if (sid) { try { await Data.liveStop(sid); } catch (ex) { /* 이미 멈춤 */ } }
+    },
+    toggle() { return Live.sid ? Live.stop() : Live.start(); },
+    leave() {                                            // 페이지를 떠나면 서버 세션도 멈춤
+      if (!Live.sid) return;
+      fetch(`/api/live/${Live.sid}/`, { method: "DELETE", keepalive: true, headers: { "X-CSRFToken": Util.csrf() } });
+    },
+  };
+
+  // ── 카메라 주소 관리 (관리자만 화면에 있음) ──
+  const Cameras = {
+    message(text, ok) {
+      const el = Util.$("#camera-message");
+      el.textContent = text;
+      el.className = `small ${ok ? "ok-text" : "error"}`;
+      el.hidden = !text;
+    },
+    async refresh() {
+      const list = await Data.cameras();
+      // 분석용 선택 목록 (사용 중인 카메라만)
+      const select = Util.$("#camera-select");
+      const enabled = list.filter((c) => c.enabled !== false);
+      const keep = select.value;
+      select.innerHTML = enabled.map((c) => `<option value="${Util.esc(c.name)}">${Util.esc(c.name)}</option>`).join("");
+      if (enabled.some((c) => c.name === keep)) select.value = keep;
+      Util.$("#no-camera").hidden = enabled.length > 0;
+      const body = Util.$("#camera-table tbody");
+      if (!body) return;
+      body.innerHTML = list.length ? list.map((c) => `<tr data-id="${c.id}">
+          <td><strong>${Util.esc(c.name)}</strong></td>
+          <td><input type="text" class="cam-url" value="${Util.esc(c.url)}" maxlength="200"></td>
+          <td><input type="checkbox" class="cam-enabled" ${c.enabled ? "checked" : ""}></td>
+          <td class="nowrap"><button type="button" class="primary small-btn" data-act="save">저장 + 연결 확인</button>
+            <button type="button" class="danger small-btn" data-act="delete">삭제</button></td></tr>`).join("")
+        : '<tr><td colspan="4" class="muted">등록된 카메라가 없습니다.</td></tr>';
+    },
+    async onClick(e) {
+      const btn = e.target.closest("button[data-act]");
+      if (!btn) return;
+      const row = btn.closest("tr");
+      const id = row.dataset.id;
+      const name = row.querySelector("strong").textContent;
+      btn.disabled = true;
+      try {
+        if (btn.dataset.act === "delete") {
+          if (!confirm(`카메라 '${name}'를 지울까요? 지난 분석 기록의 카메라 이름은 그대로 남습니다.`)) return;
+          await Data.deleteCamera(id);
+          Cameras.message(`'${name}'를 지웠습니다.`, true);
+        } else {
+          const saved = await Data.saveCamera(id, { url: row.querySelector(".cam-url").value,
+                                                    enabled: row.querySelector(".cam-enabled").checked });
+          Cameras.message(`저장했습니다: ${saved.url} — 연결 확인 중…`, true);
+          await Cameras.check(id, name);
+        }
+        await Cameras.refresh();
+      } catch (ex) {
+        Cameras.message(Util.errorText(ex), false);
+      } finally {
+        btn.disabled = false;
+      }
+    },
+    async check(id, name) {
+      try {
+        const r = await Data.checkCamera(id);
+        Cameras.message(`'${name}' ${r.message} (${r.seconds}초)`, true);
+      } catch (ex) {
+        Cameras.message(`저장은 됐지만 '${name}' 연결 확인 실패: ${Util.errorText(ex)}`, false);
+      }
+    },
+    async add() {
+      const name = Util.$("#new-camera-name");
+      const url = Util.$("#new-camera-url");
+      try {
+        const c = await Data.addCamera({ name: name.value.trim(), url: url.value, enabled: true });
+        name.value = url.value = "";
+        Cameras.message(`'${c.name}' 추가: ${c.url} — 연결 확인 중…`, true);
+        await Cameras.refresh();
+        await Cameras.check(c.id, c.name);
+      } catch (ex) {
+        Cameras.message(Util.errorText(ex), false);
+      }
+    },
+  };
+
   // ── Init ──
   const Init = {
     index() {
       Util.$$(".tab").forEach((t) => t.addEventListener("click", Handlers.switchTab));
       Util.$("#analysis-form").addEventListener("submit", Handlers.submit);
+      Util.$("#live-btn").addEventListener("click", Live.toggle);
+      window.addEventListener("pagehide", Live.leave);
+      if (Util.$("#camera-admin")) {
+        Util.$("#camera-table").addEventListener("click", Cameras.onClick);
+        Util.$("#camera-add").addEventListener("click", Cameras.add);
+        Cameras.refresh().catch((ex) => Cameras.message(Util.errorText(ex), false));
+      }
       Handlers.refreshHistory();
       // 새로고침 전에 진행 중이던 작업이 있으면 이어서 조회
       Data.list().then((jobs) => {

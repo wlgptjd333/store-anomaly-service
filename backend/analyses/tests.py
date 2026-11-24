@@ -13,7 +13,7 @@ from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
 from .camera_capture import CaptureError
-from .models import AnalysisJob, PersonPrediction
+from .models import AnalysisJob, Camera, PersonPrediction
 from .services import InferenceError
 from .tasks import run_analysis
 
@@ -33,7 +33,7 @@ def video_file(name="clip.mp4"):
     return SimpleUploadedFile(name, b"\x00\x00\x00\x18ftypmp42fake", content_type="video/mp4")
 
 
-@override_settings(MEDIA_ROOT=TMP_MEDIA, IPWEBCAM_CAMERAS={"phone": "http://192.0.2.10:8080/video"})
+@override_settings(MEDIA_ROOT=TMP_MEDIA)
 class AnalysisApiTests(TestCase):
     @classmethod
     def tearDownClass(cls):
@@ -45,6 +45,7 @@ class AnalysisApiTests(TestCase):
         self.b = User.objects.create_user("user_b", password="pw-B-12345")
         self.api = APIClient()
         self.api.force_authenticate(self.a)
+        Camera.objects.create(name="phone", url="http://192.168.40.10:8080/video")
 
     def create(self, data, result=None, error=None):
         """POST 후 transaction.on_commit 으로 등록된 Celery 작업을 그 자리에서 실행"""
@@ -189,3 +190,104 @@ class DashboardTests(TestCase):
         r = self.client.get("/admin/analyses/analysisjob/?status__exact=FAILURE")
         self.assertEqual(r.status_code, 200)
         self.assertContains(r, "IP Webcam")
+
+
+class CameraTests(TestCase):
+    """카메라 주소: 관리자만 웹에서 바꾸고, 내부망 숫자 IP 만 받는다 (임의 URL 호출 방지)."""
+
+    def setUp(self):
+        self.staff = User.objects.create_user("boss", password="pw-boss-123", is_staff=True)
+        self.user = User.objects.create_user("normal", password="pw-normal-123")
+        self.cam = Camera.objects.create(name="phone", url="http://192.168.0.10:8080/video")
+        Camera.objects.create(name="off", url="http://192.168.0.11:8080/video", enabled=False)
+        self.api = APIClient()
+
+    def test_normalize_and_validate(self):
+        from django.core.exceptions import ValidationError
+        from .cameras import normalize_camera_url, validate_camera_url
+        self.assertEqual(normalize_camera_url(" 192.168.0.10:8080 "), "http://192.168.0.10:8080/video")
+        self.assertEqual(normalize_camera_url("http://10.0.0.5:8080/shot.jpg"), "http://10.0.0.5:8080/shot.jpg")
+        validate_camera_url("http://192.168.0.10:8080/video")
+        for bad in ["http://8.8.8.8/video", "http://127.0.0.1:8001/live", "http://localhost:8080/video",
+                    "http://172.18.0.3:5432/", "http://fastapi:8001/", "ftp://192.168.0.2/video",
+                    "http://192.168.0.2:99999/video"]:
+            with self.assertRaises(ValidationError, msg=bad):
+                validate_camera_url(bad)
+
+    def test_user_sees_names_only_and_cannot_edit(self):
+        self.api.force_authenticate(self.user)
+        r = self.api.get("/api/cameras/")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.data, [{"id": self.cam.id, "name": "phone"}])          # 주소·꺼진 카메라 안 보임
+        self.assertEqual(self.api.post("/api/cameras/", {"name": "x", "url": "192.168.0.9:8080"}).status_code, 403)
+        self.assertEqual(self.api.patch(f"/api/cameras/{self.cam.id}/", {"url": "192.168.0.9:8080"}).status_code, 403)
+        self.assertEqual(self.api.post(f"/api/cameras/{self.cam.id}/check/").status_code, 403)
+
+    def test_staff_changes_address_from_web(self):
+        self.api.force_authenticate(self.staff)
+        r = self.api.patch(f"/api/cameras/{self.cam.id}/", {"url": "192.168.0.10:8080"}, format="json")
+        self.assertEqual(r.status_code, 200)
+        self.cam.refresh_from_db()
+        self.assertEqual(self.cam.url, "http://192.168.0.10:8080/video")
+        r = self.api.patch(f"/api/cameras/{self.cam.id}/", {"url": "http://172.18.0.5:6379/"}, format="json")
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("url", r.data)
+        r = self.api.post("/api/cameras/", {"name": "phone2", "url": "10.1.2.3:8080"}, format="json")
+        self.assertEqual((r.status_code, r.data["url"]), (201, "http://10.1.2.3:8080/video"))
+
+    @mock.patch("analyses.live_views.probe", return_value={"ok": True, "width": 640, "height": 480, "seconds": 0.3,
+                                                          "message": "연결됨 · 640×480"})
+    def test_staff_check_connection(self, probe):
+        self.api.force_authenticate(self.staff)
+        r = self.api.post(f"/api/cameras/{self.cam.id}/check/")
+        self.assertEqual((r.status_code, r.data["width"]), (200, 640))
+        probe.assert_called_once_with("http://192.168.0.10:8080/video")
+
+    def test_disabled_camera_cannot_be_analyzed(self):
+        self.api.force_authenticate(self.user)
+        r = self.api.post("/api/analyses/", {"input_type": "IPWEBCAM", "camera_name": "off"}, format="multipart")
+        self.assertEqual(r.status_code, 400)
+
+
+class LiveTests(TestCase):
+    """실시간 보기: Django 는 카메라 이름 → 주소를 바꿔 FastAPI 에 넘기고, 로그인한 사람만 화면을 받는다."""
+
+    SID = "0f8e6a52-3b1c-4c55-9a2f-2b8f4f7d1a10"
+
+    def setUp(self):
+        self.user = User.objects.create_user("normal", password="pw-normal-123")
+        Camera.objects.create(name="phone", url="http://192.168.0.10:8080/video")
+        self.api = APIClient()
+        self.api.force_authenticate(self.user)
+
+    def fake_response(self, code=200, data=None):
+        r = mock.Mock(status_code=code)
+        r.json.return_value = data or {}
+        r.text = ""
+        return r
+
+    def test_start_sends_registered_url_only(self):
+        with mock.patch("analyses.services.requests.request",
+                        return_value=self.fake_response(200, {"session_id": self.SID, "state": "connecting"})) as req:
+            r = self.api.post("/api/live/", {"camera_name": "phone"}, format="json")
+        self.assertEqual((r.status_code, r.data["session_id"]), (201, self.SID))
+        self.assertEqual(req.call_args.kwargs["json"], {"camera": "phone", "url": "http://192.168.0.10:8080/video"})
+        with mock.patch("analyses.services.requests.request") as req:
+            r = self.api.post("/api/live/", {"camera_name": "http://evil.example/"}, format="json")
+        self.assertEqual(r.status_code, 400)
+        req.assert_not_called()
+
+    def test_busy_and_ai_down_messages(self):
+        with mock.patch("analyses.services.requests.request",
+                        return_value=self.fake_response(409, {"detail": "이미 실행 중"})):
+            r = self.api.post("/api/live/", {"camera_name": "phone"}, format="json")
+        self.assertEqual((r.status_code, r.data["detail"]), (409, "이미 실행 중"))
+        import requests
+        with mock.patch("analyses.services.requests.request", side_effect=requests.ConnectionError()):
+            r = self.api.get(f"/api/live/{self.SID}/")
+        self.assertEqual(r.status_code, 502)
+        self.assertIn("AI 서버", r.data["detail"])
+
+    def test_stream_requires_login(self):
+        self.assertEqual(self.client.get(f"/live/{self.SID}/stream/").status_code, 302)
+        self.assertEqual(APIClient().post("/api/live/", {"camera_name": "phone"}).status_code, 403)

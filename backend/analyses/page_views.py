@@ -6,14 +6,16 @@ from django.db.models import Avg, Count
 from django.shortcuts import get_object_or_404, render
 
 from .actions import ACTIONS, CATEGORY_KO
-from .models import AnalysisJob, PersonPrediction
+from .cameras import allowed_networks_text
+from .models import AnalysisJob, Camera, PersonPrediction
 from .services import health
 
 
 def _page_context():
     return {
         "actions": ACTIONS,
-        "cameras": list(settings.IPWEBCAM_CAMERAS),          # 이름만 (주소는 화면에 보내지 않음)
+        "cameras": list(Camera.objects.filter(enabled=True).values_list("name", flat=True)),  # 이름만
+        "camera_networks": allowed_networks_text(),
         "capture_seconds": settings.CAPTURE_SECONDS,
         "uncertain_below": settings.UNCERTAIN_BELOW,
         "max_upload_mb": settings.MAX_UPLOAD_MB,

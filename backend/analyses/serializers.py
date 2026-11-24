@@ -1,10 +1,12 @@
 from pathlib import Path
 
 from django.conf import settings
+from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
 from .actions import ACTION_BY_ID, CATEGORY_KO
-from .models import AnalysisJob, PersonPrediction
+from .cameras import normalize_camera_url, validate_camera_url
+from .models import AnalysisJob, Camera, PersonPrediction
 
 
 class PersonPredictionSerializer(serializers.ModelSerializer):
@@ -68,11 +70,39 @@ class AnalysisJobCreateSerializer(serializers.ModelSerializer):
             attrs["camera_name"] = ""
         elif kind == AnalysisJob.InputType.IPWEBCAM:
             name = attrs.get("camera_name", "")
-            if name not in settings.IPWEBCAM_CAMERAS:
-                allowed = ", ".join(settings.IPWEBCAM_CAMERAS) or "없음 (.env 의 IPWEBCAM_CAMERAS 확인)"
+            enabled = list(Camera.objects.filter(enabled=True).values_list("name", flat=True))
+            if name not in enabled:
+                allowed = ", ".join(enabled) or "없음 (관리자가 카메라를 등록해야 합니다)"
                 raise serializers.ValidationError({"camera_name": f"허용된 카메라만 쓸 수 있습니다. 허용 목록: {allowed}"})
             attrs.pop("video", None)
         return attrs
+
+
+class CameraPublicSerializer(serializers.ModelSerializer):
+    """일반 사용자: 이름만 (주소는 보내지 않음)"""
+
+    class Meta:
+        model = Camera
+        fields = ["id", "name"]
+
+
+class CameraSerializer(serializers.ModelSerializer):
+    """관리자: 주소까지. '192.168.0.10:8080' 처럼 적어도 http://…/video 로 맞춘 뒤 내부망인지 검사."""
+
+    url = serializers.CharField(max_length=200)
+
+    class Meta:
+        model = Camera
+        fields = ["id", "name", "url", "enabled", "updated_at"]
+        read_only_fields = ["updated_at"]
+
+    def validate_url(self, value):
+        url = normalize_camera_url(value)
+        try:
+            validate_camera_url(url)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError(exc.messages) from exc
+        return url
 
 
 class AnalysisJobUpdateSerializer(serializers.ModelSerializer):

@@ -12,6 +12,8 @@
   YOLO Pose + ByteTrack 으로 사람을 추적하고 사람별로 **17개 이상행동 중 가장 가까운 동작과 Confidence** 를 보여 줍니다.
 - 분석은 Celery 가 백그라운드에서 처리하므로, 요청하자마자 작업 ID를 받고 화면이 상태(대기 → 처리 중 → 완료/실패)를 따라갑니다.
 - 결과는 PostgreSQL 에 남고, 관리자는 Django Admin 과 `/dashboard/`(Chart.js)에서 전체 기록·통계를 봅니다.
+- **실시간 보기**: IP Webcam 탭에서 카메라 화면에 사람별 **Skeleton** 과 최근 8초 기준 예측을 겹쳐 계속 보여 줍니다 (1초마다 갱신, 기록은 남기지 않음).
+- 휴대폰 IP 가 바뀌면 관리자가 같은 탭의 **카메라 주소 관리**에서 바로 고치고 연결을 확인합니다 (재시작 불필요, 내부망 주소만 허용).
 - 예측은 **참고용**입니다. 17개 중 하나를 고르는 모델이라 학습하지 않은 동작에도 답을 내므로, Confidence 30% 미만은 `판단 불확실`로 표시합니다.
 
 | 분류 | 동작 (ID) |
@@ -33,7 +35,8 @@ cd store-anomaly-service
 # 1) 환경변수: 예시를 복사한 뒤 비밀값과 카메라 주소를 직접 채운다 (.env 는 Git 에 올라가지 않음)
 cp .env.example .env
 #    DJANGO_SECRET_KEY, POSTGRES_PASSWORD  → 긴 무작위 문자열
-#    IPWEBCAM_CAMERAS                      → phone=http://<휴대폰 IP>:8080/video  (허용할 카메라만)
+#    IPWEBCAM_CAMERAS                      → phone=http://<휴대폰 IP>:8080/video  (처음 migrate 때 카메라 표에 한 번 옮김.
+#                                            이후 IP 가 바뀌면 웹 화면 IP Webcam 탭 → '카메라 주소 관리'(관리자)에서 수정)
 
 # 2) 빌드·실행 (서비스 5개). 처음엔 PyTorch(CPU) 등을 받느라 몇 분 걸린다
 docker compose up -d --build
@@ -65,7 +68,7 @@ docker compose exec django python manage.py createsuperuser
 세 파일 복사, Feature 코드가 두 저장소에서 같은지 확인, Pose 모델 일치 확인, fastapi 다시 빌드(모델이 이미지 안에 들어감), `/health`·E2E 확인까지 합니다.
 영상 추가부터 전체 순서는 데이터 저장소 [Runbook](https://github.com/wlgptjd333/unmanned-store-anomaly/blob/main/docs/RETRAIN_RUNBOOK.md).
 
-로컬(도커 없이) 테스트: `cd backend && pip install -r requirements.txt && python manage.py test` (SQLite·가짜 AI 서버로 18개).
+로컬(도커 없이) 테스트: `cd backend && pip install -r requirements.txt && python manage.py test` (SQLite·가짜 AI 서버로 26개).
 
 ## 3. 전체 아키텍처
 
@@ -92,7 +95,13 @@ flowchart TB
     C -- "⑤ 영상 전송 (HTTP multipart)" --> F
     F -- "⑥ 사람별 예측 JSON" --> C
     C -- "⑦ 상태·결과 저장 (ORM)" --> P
+    CAM -. "실시간 보기: 계속 받음" .-> F
+    F -. "Skeleton MJPEG · 최근 8초 예측" .-> D
+    D -. "로그인 확인 후 중계" .-> B
 ```
+
+점선 아래 세 줄은 **실시간 보기**(저장 안 함)입니다. 카메라 주소는 Django 가 DB 카메라 표에서 꺼내 FastAPI 에 넘기고,
+브라우저는 FastAPI 에 직접 닿지 않고(127.0.0.1 전용) 로그인 확인을 거치는 Django 를 통해 화면을 받습니다.
 
 - **PostgreSQL 은 Django ORM 으로만** 씁니다. FastAPI 는 DB 를 모르고, 영상을 받아 JSON 만 돌려줍니다.
 - 컨테이너끼리는 `localhost` 가 아니라 서비스 이름(`postgres`, `redis`, `fastapi`)으로 부릅니다.
@@ -146,6 +155,13 @@ erDiagram
         json windows "창별 예측"
         datetime predicted_at
     }
+    Camera {
+        bigint id PK
+        string name "사용자는 이름만 고름"
+        string url "관리자만 수정, 내부망 IP 만"
+        bool enabled
+        datetime updated_at
+    }
 ```
 
 | 테이블 | 저장하는 것 | 작성 위치 |
@@ -153,6 +169,7 @@ erDiagram
 | `auth_user` | 회원 (Django 기본) | Django 제공 |
 | `AnalysisJob` | 분석 요청 1건: 누가, 어떤 입력으로, 지금 상태, 실패 사유, 처리 시간 | `backend/analyses/models.py` |
 | `PersonPrediction` | 그 요청 영상 속 사람 1명의 예측. 두 사람이면 작업 1건에 2행 (`(job, track_id)` 유일) | `backend/analyses/models.py` |
+| `Camera` | 허용한 IP Webcam (이름·주소). `AnalysisJob.camera_name` 은 FK 가 아니라 이름 문자열 — 카메라를 지워도 지난 기록의 이름은 남게 | `backend/analyses/models.py`, `cameras.py` |
 
 - 영상 파일은 DB 에 넣지 않고 Media 폴더에 두며 경로만 저장합니다. 기록을 지우면 사람별 예측(CASCADE)과 영상 파일도 함께 지웁니다.
 - 일반 사용자는 **제목·메모만** 고칠 수 있습니다. 상태·예측값을 사용자가 바꾸면 기록과 통계를 믿을 수 없게 되기 때문입니다.
@@ -243,7 +260,29 @@ sequenceDiagram
 - **창을 `whole`(영상 전체)로 고른 이유**: 서비스로 들어오는 영상에는 사람이 표시한 '동작 구간'이 없습니다.
   구간(segment) 모델이 Validation 76.5% 로 조금 높지만 차이가 난수 변동(±4%p) 안이라, 입력 모양이 서비스와 같은 whole 모델을 씁니다.
 - **입력 영상**: mp4·mov·avi·mkv·webm, 100 MB 이하, 처음 60초까지. 60fps 는 30fps 로 줄여 처리.
-- **IP Webcam**: `.env` 에 등록한 카메라만 이름으로 고르고, Worker 가 **8초** 동안 받아 MP4 로 저장한 뒤 같은 추론을 탑니다.
+- **IP Webcam**: 관리자가 등록한 카메라만 이름으로 고르고, Worker 가 **8초** 동안 받아 MP4 로 저장한 뒤 같은 추론을 탑니다.
+
+**카메라 주소를 웹에서 바꾸게 한 이유와 막은 것** — 휴대폰은 와이파이를 다시 잡을 때마다 IP 가 바뀝니다.
+처음에는 `.env` 에만 두었는데, 바뀔 때마다 파일을 고치고 컨테이너를 다시 띄워야 했고 실제로 예시 주소가 남아 연결이 실패했습니다(아래 오류 기록).
+그렇다고 사용자가 아무 URL 이나 넣게 하면 서버가 그 주소로 접속하므로(SSRF) 서버 안쪽 서비스나 외부 아무 곳이나 찔러 볼 수 있습니다.
+그래서 ① 주소 수정은 **관리자(is_staff)만**, 일반 사용자는 이름만 고름 ② 주소는 **숫자 IP + 내부망**(`CAMERA_ALLOWED_NETWORKS`, 기본 192.168.0.0/16·10.0.0.0/8)만 —
+Docker 내부망 172.16.0.0/12 와 localhost 는 기본값에서 빠져 postgres·redis·fastapi 를 가리킬 수 없음 ③ `192.168.0.10:8080` 처럼 앱 화면 주소만 적어도 `http://…/video` 로 맞춤
+④ 저장하면 바로 Frame 하나를 받아 보는 **연결 확인**. 사용자에게 주소를 안 보이는 것도 같은 이유입니다(API 가 이름만 돌려줌).
+
+**실시간 보기 (Skeleton Overlay)** — 8초 분석은 "찍고 → 기다리고 → 결과"라 카메라 각도·사람 위치가 맞는지 미리 알 수 없습니다.
+실시간 보기는 카메라 앞에 서서 관절이 잘 잡히는지, 모델이 지금 무엇으로 보는지를 바로 확인하는 용도입니다.
+
+| 항목 | 내용 | 이유 |
+|---|---|---|
+| 처리 위치 | FastAPI 안의 세션(스레드 2개) — `services/live_session.py`, `routers/live.py` | Pose·ExtraTrees 가 이미 올라와 있는 곳. Celery 는 "한 번 처리하고 끝나는 작업"용이라 계속 도는 스트림에 맞지 않음 |
+| 받기 / 처리 분리 | 받기 스레드는 쉬지 않고 읽어 **최신 Frame 하나만** 보관, 처리 스레드는 그 Frame 만 Pose | 읽기를 멈추면 OpenCV 버퍼에 Frame 이 쌓여 화면이 몇 초씩 늦어짐. CPU 가 느리면 Frame 을 건너뛰지 밀리지 않음 |
+| Skeleton | 서버가 Frame 위에 관절·뼈대·박스·`#Track 동작ID 확률`을 그려 MJPEG 로 보냄 | 브라우저가 따로 그리면 영상과 관절 시점이 어긋남. 한글은 OpenCV 로 못 써서 이름은 옆 표에 |
+| 예측 | 사람마다 **최근 8초**만 들고, 1초마다 그 구간을 창 1개로 `predict_track` (업로드 분석과 같은 함수) | 학습이 영상 전체(whole)를 30단계로 편 모양이라, 8초 창 1개가 같은 모양. 잠깐 가려지면 직전 예측 유지 |
+| Pose 모델 | 세션마다 YOLO 를 따로 불러옴 | 업로드 분석과 같은 YOLO 객체를 쓰면 ByteTrack 의 Track ID 상태가 섞임 |
+| 동시 실행 | 한 번에 1개 (같은 카메라는 같은 세션에 붙음, 다른 카메라는 409) | CPU 하나로 두 개를 돌리면 둘 다 느려짐 |
+| 자동 종료 | 화면·상태 조회가 20초 없으면, 또는 10분이 지나면 멈춤 | 브라우저를 그냥 닫아도 서버가 계속 카메라를 붙잡지 않게 |
+| 중계 | 브라우저 ← Django(`live_views.py`, 로그인 확인) ← FastAPI. gunicorn 을 `gthread` 8스레드로 | 스트림 하나가 worker 하나를 계속 잡으므로 스레드가 있어야 다른 요청이 막히지 않음 |
+| 기록 | DB 에 남기지 않음 | 1초마다 바뀌는 값이라 기록·통계 대상이 아님. 기록은 'AI 분석 시작'(8초)으로 |
 
 FastAPI `POST /predict/video` 응답 형식 (발췌, 11/23 첫 모델 때 받은 값 — 숫자는 지금 모델과 다름):
 
@@ -302,7 +341,9 @@ FastAPI `POST /predict/video` 응답 형식 (발췌, 11/23 첫 모델 때 받은
 |---|---|---|
 | T01 모델 불러오기 | `GET /health` — 3개 파일 교차 확인(입력 수·Feature 순서·Class) | ExtraTreesClassifier · 17 Class · 2,560 Feature · ready |
 | T02 영상 업로드 | `scripts/e2e_check.py` (Docker, 세션 로그인 → API) | PENDING → STARTED → SUCCESS. 11/24 오후 모델로 정면 A05·뒷모습 A01·A11·A16·A12 5개 모두 예측 일치 (학습에 들어간 영상이라 흐름 확인용) |
-| T03 IP Webcam | ① 가짜 카메라: Worker 컨테이너 안에서 MJPEG `/video` 로 S04 영상을 반복 송출, `IPWEBCAM_CAMERAS` 에 임시 등록 ② 휴대폰 IP Webcam 앱 | ① 202(0.1초) → 8.0초 MP4 저장 → SUCCESS, 허용 목록 밖 이름은 400. 예측은 짧은 영상을 되풀이한 입력이라 `판단 불확실`(A02 24%) ② 실제 휴대폰으로 확인 예정 |
+| T03 IP Webcam | ① 가짜 카메라: Worker 컨테이너 안에서 MJPEG `/video` 로 S04 영상을 반복 송출, `IPWEBCAM_CAMERAS` 에 임시 등록 ② 휴대폰 IP Webcam 앱 | ① 202(0.1초) → 8.0초 MP4 저장 → SUCCESS, 허용 목록 밖 이름은 400. 예측은 짧은 영상을 되풀이한 입력이라 `판단 불확실`(A02 24%) ② 실제 휴대폰(11/24): 카메라 주소 관리에서 연결 확인 640×480(0.1초), Celery 컨테이너에서 Frame 수신 확인. 사람이 동작하는 8초 분석 시연은 남음 |
+| 추가: 실시간 보기 (11/24) | 휴대폰 IP Webcam → 브라우저 '실시간 보기' · S04 Validation 영상(A02 정면)을 30fps 로 흘려 넣기 | Docker CPU 로 20~22 fps(사람 없음), 영상은 사람 1명 Skeleton + `A02` 36~40% 로 표시, 멈춤 → 204 |
+| 추가: 카메라 주소 | 일반 회원이 주소 수정·연결 확인 요청, 관리자가 `172.18.0.5:6379`·`8.8.8.8` 등록 | 403 / 400 "같은 와이파이(내부망) 주소만…", 목록 API 는 일반 회원에게 이름만 |
 | T04 사람별 결과 | SBU 2인 영상 2개 | 작업 1건에 Track 1·2 각각 저장 |
 | T05 비동기 | 업로드 POST 응답 시간 | 0.02~0.5초에 202 + 작업 ID (분석은 9~22초 뒤 완료) |
 | T06 영구 저장 | 새로고침·상세 재조회 | 같은 결과 |
@@ -312,7 +353,8 @@ FastAPI `POST /predict/video` 응답 형식 (발췌, 11/23 첫 모델 때 받은
 | T09 추가 (11/24) | 휴대폰 앱이 꺼진 상태로 IP Webcam 요청 · 사람 없는 4초 영상 · 사람이 0.25초만 나온 영상 · Worker 를 멈춘 채 요청 | FAILURE "카메라 'phone'에 연결하지 못했습니다…"(5초) · SUCCESS + "영상에서 사람을 찾지 못했습니다" · SUCCESS + "판단하지 못했습니다: 화면에 0.2초만 보여…" · 10초 동안 PENDING 유지 → Worker 재시작 뒤 SUCCESS |
 | T10 Docker 재시작 | `docker compose down` → `up` (11/24 ExtraTrees 모델로 다시) | 작업 32건·사람별 예측 24건·상태별 건수 그대로, 재시작 뒤 새 분석(A09 엎드려 휴대폰 보기) SUCCESS·일치 |
 
-Django 단위 테스트 18개(`backend/accounts/tests.py`, `backend/analyses/tests.py`)는 AI 서버와 카메라를 가짜로 바꿔 위 흐름을 확인합니다.
+Django 단위 테스트 26개(`backend/accounts/tests.py`, `backend/analyses/tests.py`)는 AI 서버와 카메라를 가짜로 바꿔 위 흐름을 확인합니다
+(카메라 주소 검사·관리자 권한·실시간 중계 8개 포함).
 
 ### 만난 오류와 해결
 
@@ -321,6 +363,7 @@ Django 단위 테스트 18개(`backend/accounts/tests.py`, `backend/analyses/tes
 | 업로드하면 화면에 응답 대신 오류, 작업이 `대기`에서 멈춤 | `docker compose logs celery` → `ModuleNotFoundError: packaging` (kombu Redis 전송) | `backend/requirements.txt` 에 `packaging` 추가. 등록 실패 시 500 대신 작업을 `FAILURE`(사유: Redis 등록 실패)로 남기게 `views.py` 수정 | 재빌드 후 E2E 통과, 단위 테스트 `test_queue_down_saved_as_failure` |
 | 로컬 테스트에서 화면 테스트 6개가 `Missing staticfiles manifest entry` | 테스트는 `collectstatic` 없이 돌아가는데 해시 파일명 저장소를 씀 | 해시 저장소는 Docker 이미지(`STATIC_MANIFEST=1`)에서만 쓰게 설정 | 로컬 18개 통과, 컨테이너는 `app.<hash>.css` 로 서빙 |
 | Docker Desktop 시작 직후 종료 (`docker-secrets-engine\engine.sock` 접근 불가) | 이전 실행이 남긴 소켓 파일이 지워지지 않음 | 그 폴더를 옆으로 옮기고 재시작 | 엔진·WSL `docker` 정상 |
+| 휴대폰 IP Webcam 서버를 켰는데 `카메라 'phone'에 연결하지 못했습니다` | 브라우저로는 휴대폰 주소가 열림 → `.env` 의 `IPWEBCAM_CAMERAS` 가 예시 주소 `192.168.0.10` 그대로 | 주소를 고치는 김에, 주소를 DB 카메라 표로 옮기고 관리자가 웹에서 수정·연결 확인하게 바꿈 (내부망 IP 만) | Celery 컨테이너에서 Frame 수신, 화면 '연결 확인' 640×480 |
 
 ## 폴더 구조
 
@@ -332,10 +375,11 @@ store-anomaly-service/
 │   ├── config/             settings · urls · celery
 │   ├── accounts/           회원가입 (로그인·로그아웃은 Django 기본 뷰)
 │   ├── analyses/           models · serializers · views · tasks · services · camera_capture · admin · page_views
+│   │                       · cameras (주소 검사·연결 확인) · live_views (카메라 API·실시간 중계)
 │   ├── templates/ static/  화면 · analyses.js · dashboard.js · app.css
 │   └── Dockerfile
 ├── ai_service/             FastAPI
-│   ├── main.py routers/ services/
+│   ├── main.py routers/ services/   predictions(영상 1건) · live(실시간 보기 세션)
 │   ├── src/                데이터 저장소(unmanned-store-anomaly)에서 복사: pose_utils · feature_utils · team_feature_utils · sequence_extras
 │   ├── models/             Joblib · Feature 순서 · 학습 정보
 │   └── Dockerfile
@@ -350,4 +394,5 @@ store-anomaly-service/
   A06 도구 휘두르기(측면 40% · 정면 60%), A04 뽑기 기계 흔들기(측면 47% · 뒤 60%) — 서서 팔만 움직이는 동작끼리 헷갈립니다.
   틀리면 **입력 품질(관절 Conf·유효 Frame) → Pose → Feature → 창 → 모델** 순서로 원인을 봅니다. 결과 표에 입력 품질을 함께 보여 주는 이유입니다.
 - 골반 화면 위치(`hip_x_img`, `hip_y_img`)를 Feature 로 쓰므로, 학습 때와 다른 화면 구도(가로/세로, 카메라 위치)에 약합니다.
+- 실시간 보기는 CPU 처리라 사람이 많을수록 fps 가 떨어지고, 한 번에 세션 하나만 돌립니다. 8초 창이 다 차기 전(처음 몇 초)의 예측은 짧은 구간 기준이라 흔들립니다.
 - 17개 중 하나를 반드시 고르는 구조라 "정상 행동"을 따로 판정하지 못합니다. Confidence 기준(30%)은 Validation 평균 최고 확률(약 39%)을 보고 정한 값입니다.

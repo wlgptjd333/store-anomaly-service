@@ -1,6 +1,6 @@
 """허용된 IP Webcam 에서 정해진 시간(기본 8초)만 Frame 을 읽어 MP4 로 저장하고 끝낸다.
 
-  - 카메라 주소는 .env 의 IPWEBCAM_CAMERAS 에만 있고, 사용자는 이름만 고른다 (임의 URL 호출 방지)
+  - 카메라 주소는 DB 카메라 표(관리자만 수정)에만 있고, 사용자는 이름만 고른다 (임의 URL 호출 방지)
   - 연결이 안 되거나 중간에 끊기면 CaptureError → 작업은 FAILURE 와 사유로 저장
 """
 import time
@@ -14,8 +14,14 @@ class CaptureError(Exception):
     pass
 
 
+def camera_url(camera_name: str) -> str | None:
+    from .models import Camera
+    cam = Camera.objects.filter(name=camera_name, enabled=True).first()
+    return cam.url if cam else None
+
+
 def capture_clip(camera_name: str, out_path: Path, seconds: float | None = None) -> dict:
-    url = settings.IPWEBCAM_CAMERAS.get(camera_name)
+    url = camera_url(camera_name)
     if not url:
         raise CaptureError(f"허용되지 않은 카메라입니다: {camera_name}")
     seconds = seconds or settings.CAPTURE_SECONDS

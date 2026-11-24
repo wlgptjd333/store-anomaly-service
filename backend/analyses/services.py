@@ -30,6 +30,48 @@ def predict_video(path: str) -> dict:
     return resp.json()
 
 
+class LiveError(Exception):
+    def __init__(self, message: str, status: int = 502):
+        super().__init__(message)
+        self.status = status
+
+
+def _live(method: str, path: str, **kw):
+    url = settings.FASTAPI_URL.rstrip("/") + "/live" + path
+    try:
+        resp = requests.request(method, url, timeout=kw.pop("timeout", 10), **kw)
+    except requests.RequestException as exc:
+        raise LiveError("AI 서버에 연결하지 못했습니다. 잠시 후 다시 시도하세요.") from exc
+    if resp.status_code >= 400 and not kw.get("stream"):
+        try:
+            detail = resp.json().get("detail", resp.text)
+        except ValueError:
+            detail = resp.text[:200]
+        raise LiveError(str(detail), resp.status_code if resp.status_code in (404, 409, 503) else 502)
+    return resp
+
+
+def live_start(camera: str, url: str) -> dict:
+    return _live("POST", "/start", json={"camera": camera, "url": url}).json()
+
+
+def live_state(sid: str) -> dict:
+    return _live("GET", f"/{sid}").json()
+
+
+def live_stop(sid: str) -> None:
+    _live("DELETE", f"/{sid}")
+
+
+def live_stream(sid: str):
+    """MJPEG 를 FastAPI 에서 받아 그대로 넘긴다. 연결은 브라우저가 끊을 때 닫힌다."""
+    resp = _live("GET", f"/{sid}/stream", stream=True, timeout=(5, 30))
+    if resp.status_code != 200:
+        resp.close()
+        raise LiveError("실시간 세션이 없습니다. 다시 시작하세요.", 404)
+    return resp
+
+
 def health() -> dict:
     try:
         return requests.get(settings.FASTAPI_URL.rstrip("/") + "/health", timeout=3).json()
