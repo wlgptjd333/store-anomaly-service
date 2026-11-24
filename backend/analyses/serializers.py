@@ -2,6 +2,7 @@ from pathlib import Path
 
 from django.conf import settings
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.urls import reverse
 from rest_framework import serializers
 
 from .actions import ACTION_BY_ID, CATEGORY_KO
@@ -34,13 +35,20 @@ class AnalysisJobSerializer(serializers.ModelSerializer):
     expected_action_display = serializers.CharField(source="get_expected_action_display", read_only=True)
     source_display = serializers.CharField(source="get_source_display", read_only=True)
     video_name = serializers.SerializerMethodField()
+    video_url = serializers.SerializerMethodField()
+    download_url = serializers.SerializerMethodField()
+    video_size = serializers.SerializerMethodField()
+    playback_ready = serializers.SerializerMethodField()
+    owner = serializers.CharField(source="user.username", read_only=True)
+    can_edit = serializers.SerializerMethodField()
     predictions = PersonPredictionSerializer(many=True, read_only=True)
     is_finished = serializers.BooleanField(read_only=True)
 
     class Meta:
         model = AnalysisJob
         fields = ["id", "title", "memo", "input_type", "input_type_display", "source", "source_display",
-                  "live_snapshot", "video_name", "camera_name",
+                  "live_snapshot", "video_name", "video_url", "download_url", "video_size", "playback_ready",
+                  "owner", "can_edit", "camera_name",
                   "expected_action", "expected_action_display", "status", "status_display", "is_finished",
                   "celery_task_id", "error_message", "result_message", "video_seconds", "processing_seconds",
                   "created_at", "started_at", "finished_at", "predictions"]
@@ -48,6 +56,25 @@ class AnalysisJobSerializer(serializers.ModelSerializer):
 
     def get_video_name(self, obj):
         return Path(obj.video.name).name if obj.video else ""
+
+    def get_video_url(self, obj):
+        return reverse("analyses:video", args=[obj.pk]) if obj.video else ""
+
+    def get_download_url(self, obj):
+        return f"{self.get_video_url(obj)}?original=1&download=1" if obj.video else ""
+
+    def get_video_size(self, obj):
+        try:
+            return obj.video.size if obj.video else None
+        except OSError:                          # 파일이 지워진 옛 기록
+            return None
+
+    def get_playback_ready(self, obj):
+        return bool(obj.playback)
+
+    def get_can_edit(self, obj):
+        request = self.context.get("request")
+        return bool(request and obj.user_id == request.user.id)
 
 
 class AnalysisJobCreateSerializer(serializers.ModelSerializer):

@@ -16,13 +16,11 @@
 남기고, 셋 다 같은 Celery → FastAPI /predict/video 를 탄다. 저장 당시 실시간 예측은 live_snapshot 에 같이 둔다.
 FastAPI 포트는 127.0.0.1 에만 열려 있어서, 브라우저는 로그인 확인을 거치는 Django 를 통해서만 화면을 받는다.
 """
-import uuid
 from datetime import timedelta
 
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.core.files.base import ContentFile
-from django.db import transaction
 from django.http import JsonResponse, StreamingHttpResponse
 from django.utils import timezone
 from rest_framework import status, viewsets
@@ -30,12 +28,11 @@ from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import SAFE_METHODS, BasePermission, IsAuthenticated
 from rest_framework.response import Response
 
-from . import services
+from . import jobs, services
 from .actions import ACTION_BY_ID
 from .cameras import probe
 from .models import AnalysisJob, Camera
 from .serializers import CameraPublicSerializer, CameraSerializer
-from .views import AnalysisJobViewSet
 
 
 class ReadOrStaff(BasePermission):
@@ -142,17 +139,16 @@ def live_save(request, sid):
     except services.LiveError as exc:
         return _error(exc)
 
-    task_id = str(uuid.uuid4())
-    job = AnalysisJob(user=request.user, input_type=AnalysisJob.InputType.IPWEBCAM, camera_name=state["camera"],
-                      source=AnalysisJob.Source.LIVE_AUTO if auto else AnalysisJob.Source.LIVE,
-                      live_snapshot=snapshot, expected_action=expected, title=title, celery_task_id=task_id)
-    job.video.save(f"live_{timezone.now():%Y%m%d_%H%M%S}.mp4", ContentFile(clip), save=False)
-    with transaction.atomic():
+    def save(task_id):
+        job = AnalysisJob(user=request.user, input_type=AnalysisJob.InputType.IPWEBCAM, camera_name=state["camera"],
+                          source=AnalysisJob.Source.LIVE_AUTO if auto else AnalysisJob.Source.LIVE,
+                          live_snapshot=snapshot, expected_action=expected, title=title, celery_task_id=task_id)
+        job.video.save(f"live_{timezone.now():%Y%m%d_%H%M%S}.mp4", ContentFile(clip), save=False)
         job.save()
-        transaction.on_commit(lambda: AnalysisJobViewSet._enqueue(job, task_id))
-    job.refresh_from_db()
-    return Response({"id": job.pk, "task_id": task_id, "status": job.status, "source": job.source,
-                     "title": job.title, "status_url": f"/api/analyses/{job.pk}/status/"}, status=202)
+        return job
+
+    job = jobs.submit(save)                      # 업로드와 같은 '저장 확정 뒤 Celery 등록'
+    return Response(jobs.accepted(job, source=job.source, title=job.title), status=202)
 
 
 @login_required

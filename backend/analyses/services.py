@@ -9,8 +9,20 @@ class InferenceError(Exception):
     """사용자에게 그대로 보여 줄 수 있는 실패 사유"""
 
 
+def _url(path: str) -> str:
+    return settings.FASTAPI_URL.rstrip("/") + path
+
+
+def _detail(resp) -> str:
+    """FastAPI HTTPException 의 detail, JSON 이 아니면 본문 앞부분"""
+    try:
+        return str(resp.json().get("detail", resp.text))
+    except ValueError:
+        return resp.text[:200]
+
+
 def predict_video(path: str) -> dict:
-    url = settings.FASTAPI_URL.rstrip("/") + "/predict/video"
+    url = _url("/predict/video")
     try:
         with open(path, "rb") as f:
             resp = requests.post(url, files={"file": (Path(path).name, f, "video/mp4")},
@@ -22,11 +34,7 @@ def predict_video(path: str) -> dict:
     except requests.ConnectionError as exc:
         raise InferenceError("AI 서버에 연결하지 못했습니다. 잠시 후 다시 시도하세요.") from exc
     if resp.status_code != 200:
-        try:
-            detail = resp.json().get("detail", resp.text)
-        except ValueError:
-            detail = resp.text[:200]
-        raise InferenceError(f"AI 서버 오류 ({resp.status_code}): {detail}")
+        raise InferenceError(f"AI 서버 오류 ({resp.status_code}): {_detail(resp)}")
     return resp.json()
 
 
@@ -37,17 +45,13 @@ class LiveError(Exception):
 
 
 def _live(method: str, path: str, **kw):
-    url = settings.FASTAPI_URL.rstrip("/") + "/live" + path
+    url = _url("/live" + path)
     try:
         resp = requests.request(method, url, timeout=kw.pop("timeout", 10), **kw)
     except requests.RequestException as exc:
         raise LiveError("AI 서버에 연결하지 못했습니다. 잠시 후 다시 시도하세요.") from exc
     if resp.status_code >= 400 and not kw.get("stream"):
-        try:
-            detail = resp.json().get("detail", resp.text)
-        except ValueError:
-            detail = resp.text[:200]
-        raise LiveError(str(detail), resp.status_code if resp.status_code in (404, 409, 503) else 502)
+        raise LiveError(_detail(resp), resp.status_code if resp.status_code in (404, 409, 503) else 502)
     return resp
 
 
@@ -79,6 +83,6 @@ def live_stream(sid: str):
 
 def health() -> dict:
     try:
-        return requests.get(settings.FASTAPI_URL.rstrip("/") + "/health", timeout=3).json()
+        return requests.get(_url("/health"), timeout=3).json()
     except (requests.RequestException, ValueError):
         return {"status": "unreachable"}

@@ -5,6 +5,8 @@
 
 > 데이터·모델 쪽 작업(촬영 정리, Pose 추출, QA, 학습·평가)은 [unmanned-store-anomaly](https://github.com/wlgptjd333/unmanned-store-anomaly) 저장소에 있고,
 > 이 저장소는 그 모델을 **웹 서비스로 연결하는 부분**만 담습니다. (촬영 데이터만 3팀이 함께 찍었고, 두 저장소 모두 개인 작업입니다)
+>
+> 'AI 분석 시작'부터 결과 저장까지 **어느 파일의 어느 함수가 무엇을 하는지**는 [docs/PIPELINE.md](docs/PIPELINE.md) 에 단계별로 정리했습니다.
 
 ## 1. 프로젝트 소개
 
@@ -12,6 +14,10 @@
   YOLO Pose + ByteTrack 으로 사람을 추적하고 사람별로 **17개 이상행동 중 가장 가까운 동작과 Confidence** 를 보여 줍니다.
 - 분석은 Celery 가 백그라운드에서 처리하므로, 요청하자마자 작업 ID를 받고 화면이 상태(대기 → 처리 중 → 완료/실패)를 따라갑니다.
 - 결과는 PostgreSQL 에 남고, 관리자는 Django Admin 과 `/dashboard/`(Chart.js)에서 전체 기록·통계를 봅니다.
+- **영상 확인**: 올리기 전에 미리보기(길이·해상도·예상 분석 시간)를 보고, 결과 화면에서는 분석한 영상(IP Webcam 녹화본 포함)을 바로 재생합니다.
+  **구간별 예측** 버튼을 누르면 그 시점으로 이동하고, 재생 중인 구간이 진하게 표시돼 "어느 장면에서 무엇으로 봤는지"를 확인할 수 있습니다.
+- **대시보드 편의 기능**: 기간(오늘·7일·30일), 상태·입력·예측 동작·일치 여부·회원·검색 조건, 20건씩 쪽 나누기, 조건 그대로 **CSV 내려받기**,
+  날짜별 작업 수, 자주 헷갈린 동작, 차트 막대를 누르면 목록 거르기, 30초 자동 새로고침. 목록에서 다른 회원 기록도 **읽기 전용**으로 열어 영상까지 봅니다.
 - **실시간 보기**: IP Webcam 탭에서 카메라 화면에 사람별 **Skeleton** 과 최근 8초 기준 예측을 겹쳐 계속 보여 줍니다 (1초마다 갱신).
   **이 장면 저장**을 누르면 화면에 보이던 최근 8초를 그대로 기록하고, **자동 감지 기록**을 켜면 같은 동작이 3초 넘게 기준 이상으로 이어질 때 자동으로 저장합니다.
 - 휴대폰 IP 가 바뀌면 관리자가 같은 탭의 **카메라 주소 관리**에서 바로 고치고 연결을 확인합니다 (재시작 불필요, 내부망 주소만 허용).
@@ -88,7 +94,7 @@ flowchart TB
         C["celery<br/>Celery Worker"]
         F["fastapi<br/>AI 추론 :8001<br/>YOLO Pose + ByteTrack + ExtraTrees·1D-CNN"]
         P[("postgres<br/>auth_user · AnalysisJob<br/>PersonPrediction")]
-        M[/"media 볼륨<br/>업로드·수집 영상"/]
+        M[/"media 볼륨<br/>업로드·수집 영상<br/>재생용 사본(H.264)"/]
     end
     B -- "① 분석 요청 (영상/카메라 이름)" --> D
     D -- "② 작업 저장 (ORM)" --> P
@@ -100,7 +106,9 @@ flowchart TB
     M -- "영상 읽기" --> C
     C -- "⑤ 영상 전송 (HTTP multipart)" --> F
     F -- "⑥ 사람별 예측 JSON" --> C
-    C -- "⑦ 상태·결과 저장 (ORM)" --> P
+    C -- "⑦ 재생용 사본 (ffmpeg)" --> M
+    C -- "⑧ 상태·결과 저장 (ORM)" --> P
+    M -. "결과 화면 영상 (권한 확인·Range)" .-> D
     CAM -. "실시간 보기: 계속 받음" .-> F
     F -. "Skeleton MJPEG · 최근 8초 예측" .-> D
     D -. "로그인 확인 후 중계" .-> B
@@ -113,6 +121,7 @@ flowchart TB
 - 컨테이너끼리는 `localhost` 가 아니라 서비스 이름(`postgres`, `redis`, `fastapi`)으로 부릅니다.
 - 공개 포트는 django `8000` 하나. fastapi `8001` 은 개발 확인용으로 `127.0.0.1` 에만 엽니다.
 - Django 와 Celery 는 같은 이미지(`backend/Dockerfile`)를 쓰고 실행 명령만 다릅니다. 업로드 영상은 `media` 볼륨을 함께 씁니다.
+- 영상은 `/media/` 로 그대로 열지 않고 `/analyses/{id}/video/` 가 매번 권한(본인·관리자)을 확인한 뒤 보냅니다. 영상 중간으로 건너뛸 수 있게 HTTP Range(206)를 직접 처리합니다 (`playback.py`).
 
 ## 4. DB 설계 (ERD)
 
@@ -199,7 +208,7 @@ sequenceDiagram
     U->>JS: [AI 분석 시작] 클릭
     JS->>V: POST /api/analyses/ (영상 또는 카메라 이름)
     V->>V: 입력 검사 (확장자·크기 / 허용 카메라)
-    V->>DB: AnalysisJob 저장 (PENDING)
+    V->>DB: jobs.submit: AnalysisJob 저장 (PENDING)
     V-->>Q: transaction.on_commit → run_analysis 등록
     V-->>JS: 202 {id, task_id} — 바로 반환
     loop 2초마다
@@ -214,20 +223,26 @@ sequenceDiagram
     T->>F: services.py: POST /predict/video (영상 파일)
     F->>F: YOLO Pose + ByteTrack → 사람별 40값/Frame → 30단계 → ExtraTrees(+ 변화량·요약 통계)·1D-CNN 확률 평균
     F-->>T: {predictions: [track_id, action, confidence …]}
+    T->>T: playback.py: ffmpeg 로 브라우저 재생용 사본 (실패해도 결과는 저장)
     T->>DB: PersonPrediction 저장 + SUCCESS (실패 시 FAILURE + 사유)
     JS->>V: GET /api/analyses/{id}/
-    V-->>JS: 사람별 결과 → 표로 표시, 최근 이력 새로고침
+    V-->>JS: 사람별 결과 → 표 + 분석한 영상, 최근 이력 새로고침
+    JS->>V: GET /analyses/{id}/video/ (Range) — 구간 버튼으로 이동
 ```
 
 | 단계 | 파일 |
 |---|---|
-| 입력 화면·탭 전환·상태 조회·결과 표 | `backend/templates/analyses/index.html`, `backend/static/js/analyses.js` |
-| 요청 접수·권한·작업 등록 | `backend/analyses/views.py`, `serializers.py`, `permissions.py` |
+| 입력 화면·미리보기·상태 조회·결과 표·영상 | `backend/templates/analyses/index.html`, `detail.html`, `backend/static/js/analyses.js` |
+| 요청 접수·권한 | `backend/analyses/views.py`, `serializers.py`, `permissions.py` |
+| 작업 등록 (업로드·장면 저장 공통) | `backend/analyses/jobs.py` |
 | 백그라운드 처리 | `backend/analyses/tasks.py`, `camera_capture.py`, `services.py` |
+| 재생용 사본·영상 보내기 | `backend/analyses/playback.py`, `page_views.video`, `management/commands/make_playback.py` |
 | 추론 API | `ai_service/main.py`, `routers/predictions.py` |
-| 영상 → 사람별 Feature | `ai_service/services/pose_pipeline.py` (+ `src/` 의 Feature 코드, 데이터 저장소에서 복사) |
+| 영상 → 사람별 Feature | `ai_service/services/pose_pipeline.py` `track_people` (실시간 보기와 같은 함수, + `src/` 의 Feature 코드) |
 | 모델 로드·예측 | `ai_service/services/model_loader.py`, `action_inference.py`, `src/sequence_extras.py`, `src/temporal_cnn.py` |
-| 대시보드 집계·차트 | `backend/analyses/page_views.py`, `backend/static/js/dashboard.js` |
+| 대시보드 집계·조건·CSV·차트 | `backend/analyses/dashboard.py`, `page_views.dashboard`, `backend/static/js/dashboard.js` |
+
+단계별 입력·출력, DB 상태 문구, 실패 처리, 파일이 생기고 지워지는 곳은 [docs/PIPELINE.md](docs/PIPELINE.md).
 
 ## 6. 사용한 모델과 입력 형식
 
@@ -338,12 +353,15 @@ FastAPI `POST /predict/video` 응답 형식 (발췌, 11/23 첫 모델 때 받은
 
 ## 7. 실행 결과와 검증
 
-**정상 분석** — 입력: 사용자 본인(S04)이 촬영한 `A005 밀치기` 정면 영상 2.8초 → 예측 A005, Confidence 90%, 일치 (11/24 오후 모델).
+**정상 분석 + 영상 확인** — 입력: 사용자 본인(S04)이 촬영한 `A010 뒤로 눕기` 정면 영상 14.6초 → 예측 A010, Confidence 40%, 일치 (11/24 밤 모델).
+영상이 8초보다 길어 창이 3개(0~8·4~12·6.5~14.5초)이고, 5초 지점으로 옮긴 화면이라 그 시점을 포함한 두 창이 진하게 표시됩니다.
+마지막 창(일어나는 장면)은 25%로 낮아 점선입니다. 사람별 최종값은 세 창 확률의 평균이라 40%입니다.
 (이 영상은 서비스용 모델 학습에도 들어간 영상이라 정확도 근거가 아니라 **흐름 확인용**입니다. 정확도는 6번의 사람 단위 평가 수치를 봅니다.)
 
 ![정상 분석 결과](docs/images/screen_result_success.png)
 
 **두 사람 (T04)** — 입력: 8일차 SBU 악수 영상(2명) → 한 작업에 Track 1·2 결과가 따로 저장. 학습하지 않은 동작이라 둘 다 Confidence 30% 아래(17%·28%)로 `판단 불확실`.
+(공개 데이터셋 사람 영상이라 캡처에서는 영상 칸을 숨겼습니다.)
 
 ![두 사람 결과](docs/images/screen_result_two_people.png)
 
@@ -351,13 +369,27 @@ FastAPI `POST /predict/video` 응답 형식 (발췌, 11/23 첫 모델 때 받은
 
 ![실패 결과](docs/images/screen_result_failure.png)
 
-**사용자 화면** — 업로드 / IP Webcam 탭, 최근 이력
+**사용자 화면** — 업로드 / IP Webcam 탭, 최근 이력 (영상 있는 기록은 `▶ 보기`)
 
 ![분석 화면](docs/images/screen_index_upload.png)
 
-**관리자 대시보드** — 동작별 예측 건수(분류별 색, 옅은 색 = 판단 불확실), 작업 상태별 건수, 입력 방식별 건수·평균 처리 시간
+**업로드 미리보기** — 파일을 고르면 올리기 전에 영상을 재생해 보고 길이·해상도·예상 분석 시간을 확인합니다.
+100 MB 초과, 60초 초과(여러 동작이 섞임), 3초 미만, 세로 영상이면 주의 문구가 나옵니다. 올리는 동안 버튼에 업로드 % 가 표시됩니다.
+
+![업로드 미리보기](docs/images/screen_upload_preview.png)
+
+**관리자 대시보드** — 기간 버튼, KPI 8개(실패율·판단 불확실 비율·평균 처리 시간·수행한 동작과 일치율·지금 대기 중),
+동작별 예측 건수(분류별 색, 옅은 색 = 판단 불확실, 막대를 누르면 목록 거르기), 작업 상태별, 입력 방식별, 날짜별 작업 수, 자주 헷갈린 동작, 작업 목록.
+'수행한 동작과 일치'는 사용자가 고른 값과 비교한 **참고 숫자**입니다. 검증된 정답이 아니고, Confidence 높은 장면만 골라 저장하는 자동 감지 기록은 뺍니다.
 
 ![대시보드](docs/images/screen_dashboard.png)
+
+**작업 목록 조건·CSV** — 상태·입력·영상 확보 방법·예측 동작·일치 여부·회원·검색(번호·제목·메모·카메라·오류)·판단 불확실·영상 있음.
+고르면 바로 적용되고, 20건씩 쪽을 나눕니다. **CSV 내려받기**는 지금 조건 그대로입니다.
+Excel 에서 한글이 깨지지 않게 BOM 을 붙이고, `=`·`+`·`-`·`@` 로 시작하는 회원 입력은 수식으로 실행되지 않게 `'` 를 붙입니다.
+번호를 누르면 다른 회원 기록도 **읽기 전용**으로 열립니다 (영상 포함, 수정·삭제 칸 없음, API 도 관리자는 상세 조회만).
+
+![대시보드 조건](docs/images/screen_dashboard_filter.png)
 
 **Django Admin** — 상태·입력 방식·예상 동작 필터, 사용자 검색, 사람별 예측 Inline
 
@@ -378,12 +410,15 @@ FastAPI `POST /predict/video` 응답 형식 (발췌, 11/23 첫 모델 때 받은
 | T06 영구 저장 | 새로고침·상세 재조회 | 같은 결과 |
 | T07 CRUD 권한 | 회원 B 가 A 의 작업 조회/수정/삭제 | 404 / 404 / 404, B 목록 0건. A 의 PATCH 는 제목·메모만, PUT 405 |
 | T08 관리자 | admin 으로 `/dashboard/`, 일반 회원 | 200 / 관리자 로그인으로 이동 |
+| 추가: 영상 확인 (11/24 밤) | Docker 에서 업로드 → 결과 화면, `Range: bytes=0-99`, 다른 회원·관리자로 영상 주소, 옛 기록 `make_playback` | 완료와 함께 재생용 사본(14.1 MB → 0.08 MB, 1.1초), 206 `bytes 0-99/80667`, 404 / 200(관리자 읽기 전용), 옛 기록 33개 사본 생성(손상 파일 10개는 건너뜀) |
+| 추가: 대시보드 조건 (11/24 밤) | 기간·상태·판단 불확실·일치·회원·검색·쪽·CSV | 단위 테스트 `DashboardToolsTests` + Docker 에서 `/dashboard/?period=today&status=SUCCESS`·`?export=csv` 200 |
 | T09 예외 처리 | 손상 파일, `.txt`, 허용 안 된 카메라 URL, Redis·AI 서버 끊김 | FAILURE + 사유 / 400 (DB 저장 전 거절) |
 | T09 추가 (11/24) | 휴대폰 앱이 꺼진 상태로 IP Webcam 요청 · 사람 없는 4초 영상 · 사람이 0.25초만 나온 영상 · Worker 를 멈춘 채 요청 | FAILURE "카메라 'phone'에 연결하지 못했습니다…"(5초) · SUCCESS + "영상에서 사람을 찾지 못했습니다" · SUCCESS + "판단하지 못했습니다: 화면에 0.2초만 보여…" · 10초 동안 PENDING 유지 → Worker 재시작 뒤 SUCCESS |
 | T10 Docker 재시작 | `docker compose down` → `up` (11/24 ExtraTrees 모델로 다시) | 작업 32건·사람별 예측 24건·상태별 건수 그대로, 재시작 뒤 새 분석(A009 앞으로 눕기) SUCCESS·일치 |
 
-Django 단위 테스트 31개(`backend/accounts/tests.py`, `backend/analyses/tests.py`)는 AI 서버와 카메라를 가짜로 바꿔 위 흐름을 확인합니다
-(카메라 주소 검사·관리자 권한·실시간 중계·장면 저장·자동 감지 조건 13개 포함).
+Django 단위 테스트 41개(`backend/accounts/tests.py`, `backend/analyses/tests.py`)는 AI 서버·카메라·ffmpeg 를 가짜로 바꿔 위 흐름을 확인합니다
+(카메라 주소 검사·관리자 권한·실시간 중계·장면 저장·자동 감지 조건 13개, 영상 재생·Range·사본·삭제 6개, 대시보드 조건·쪽·CSV 4개 포함).
+리팩터링(공통 함수로 모으기) 전·후로 S04 영상 2개의 AI 예측이 동작·Confidence·창·유효 Frame 까지 같은지도 확인했습니다 ([docs/PIPELINE.md 6](docs/PIPELINE.md#6-한-곳에-모아-둔-공통-코드-리팩터링)).
 
 ### 만난 오류와 해결
 
@@ -393,6 +428,7 @@ Django 단위 테스트 31개(`backend/accounts/tests.py`, `backend/analyses/tes
 | 로컬 테스트에서 화면 테스트 6개가 `Missing staticfiles manifest entry` | 테스트는 `collectstatic` 없이 돌아가는데 해시 파일명 저장소를 씀 | 해시 저장소는 Docker 이미지(`STATIC_MANIFEST=1`)에서만 쓰게 설정 | 로컬 18개 통과, 컨테이너는 `app.<hash>.css` 로 서빙 |
 | Docker Desktop 시작 직후 종료 (`docker-secrets-engine\engine.sock` 접근 불가) | 이전 실행이 남긴 소켓 파일이 지워지지 않음 | 그 폴더를 옆으로 옮기고 재시작 | 엔진·WSL `docker` 정상 |
 | 휴대폰 IP Webcam 서버를 켰는데 `카메라 'phone'에 연결하지 못했습니다` | 브라우저로는 휴대폰 주소가 열림 → `.env` 의 `IPWEBCAM_CAMERAS` 가 예시 주소 `192.168.0.10` 그대로 | 주소를 고치는 김에, 주소를 DB 카메라 표로 옮기고 관리자가 웹에서 수정·연결 확인하게 바꿈 (내부망 IP 만) | Celery 컨테이너에서 Frame 수신, 화면 '연결 확인' 640×480 |
+| 결과 화면에서 IP Webcam 녹화본·실시간 장면 저장 영상이 재생되지 않음 (검은 칸) | 파일은 정상, OpenCV 가 `mp4v`(MPEG-4 Part 2)로 저장 → Chrome·Edge `<video>` 미지원. 건너뛰기도 안 됨(Range 미지원) | 원본은 그대로 두고 Celery 가 ffmpeg 로 H.264 사본을 만들고, 권한 확인 + Range 응답 뷰로 보냄 | Edge 에서 재생·구간 이동 확인, 단위 테스트 206/416 |
 | 실시간 보기에서는 잘 맞는데 'AI 분석 시작' 결과는 A009·A010 (눕기) 로 나옴 | 저장된 8초 영상을 Frame 별로 열어 봄 → ① 휴대폰을 세로로 들어 영상이 90° 누워 있음 ② 버튼 뒤 7~8초 대기열에서 기다리다 녹화 시작(앞 작업 2개 + 실시간 보기와 CPU 공유) → 동작이 녹화 전에 끝남 | 카메라 '화면 회전' 설정, 화면에 '지금 녹화 중' 표시, 실시간 화면의 최근 8초를 그대로 저장하는 '이 장면 저장'·자동 감지 추가 | 같은 영상을 똑바로 돌려 다시 분석하니 눕기 예측이 사라지고 고른 동작 A003 이 1위(#43)·3위(#42)로 올라옴, 장면 저장 E2E 통과 |
 
 ## 폴더 구조
@@ -404,17 +440,20 @@ store-anomaly-service/
 ├── backend/                Django + DRF + Celery (같은 이미지)
 │   ├── config/             settings · urls · celery
 │   ├── accounts/           회원가입 (로그인·로그아웃은 Django 기본 뷰)
-│   ├── analyses/           models · serializers · views · tasks · services · camera_capture · admin · page_views
+│   ├── analyses/           models · serializers · views · jobs (작업 등록) · tasks · services · camera_capture · admin
+│   │                       · page_views · dashboard (집계·조건·CSV) · playback (재생용 사본·Range)
 │   │                       · cameras (주소 검사·연결 확인) · live_views (카메라 API·실시간 중계)
+│   │                       · management/commands/make_playback.py (옛 기록 재생용 사본)
 │   ├── templates/ static/  화면 · analyses.js · dashboard.js · app.css
-│   └── Dockerfile
+│   └── Dockerfile          python:3.12-slim + ffmpeg
 ├── ai_service/             FastAPI
 │   ├── main.py routers/ services/   predictions(영상 1건) · live(실시간 보기 세션)
 │   ├── src/                데이터 저장소(unmanned-store-anomaly)에서 복사: pose_utils · feature_utils · team_feature_utils · sequence_extras · temporal_cnn
 │   ├── models/             Joblib · Feature 순서 · 학습 정보
 │   └── Dockerfile
 ├── scripts/                e2e_check.py (Docker 통합 확인) · capture_screens.py (README 캡처) · update_model.sh (모델 교체)
-└── docs/images/            README 캡처 (얼굴·비밀번호·카메라 주소 없음)
+├── docs/PIPELINE.md        'AI 분석 시작'부터 저장까지 파일·함수 단위 흐름, 공통 코드 정리 기록
+└── docs/images/            README 캡처 (영상은 본인 S04 만, 비밀번호·카메라 주소 없음)
 ```
 
 ## 한계
@@ -424,4 +463,5 @@ store-anomaly-service/
   틀리면 **입력 품질(관절 Conf·유효 Frame) → Pose → Feature → 창 → 모델** 순서로 원인을 봅니다. 결과 표에 입력 품질을 함께 보여 주는 이유입니다.
 - 골반 화면 위치(`hip_x_img`, `hip_y_img`)를 Feature 로 쓰므로, 학습 때와 다른 화면 구도(가로/세로, 카메라 위치)에 약합니다.
 - 실시간 보기는 CPU 처리라 사람이 많을수록 fps 가 떨어지고, 한 번에 세션 하나만 돌립니다. 실시간 보기를 켠 채 분석하면 CPU 를 나눠 써 처리 시간이 2~5배 길어집니다. 8초 창이 다 차기 전(처음 몇 초)의 예측은 짧은 구간 기준이라 흔들립니다.
+- 재생용 사본은 소리를 빼고 최대 720p 로 줄입니다 (동작 확인용). 원본은 '원본 내려받기'로 받습니다. 사본을 만드는 동안(8초 녹화본 1초 안팎) 완료 표시가 그만큼 늦습니다.
 - 17개 중 하나를 반드시 고르는 구조라 "정상 행동"을 따로 판정하지 못합니다. Confidence 기준(30%)은 처음 Validation 평균 최고 확률(약 39%)을 보고 정했고, 모델을 바꿀 때마다 30% 위쪽 정확도로 다시 확인합니다.

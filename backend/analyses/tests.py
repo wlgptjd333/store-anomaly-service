@@ -5,11 +5,13 @@ FastAPI 와 카메라는 가짜(mock)로 바꾸고, Celery 작업은 on_commit �
 """
 import shutil
 import tempfile
+from datetime import timedelta
 from unittest import mock
 
 from django.contrib.auth.models import User
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from .camera_capture import CaptureError
@@ -52,7 +54,7 @@ class AnalysisApiTests(TestCase):
         side = error if error else None
         with mock.patch("analyses.tasks.predict_video", return_value=result or fake_result(),
                         side_effect=side) as pv, \
-                mock.patch("analyses.views.run_analysis.apply_async",
+                mock.patch("analyses.jobs.run_analysis.apply_async",
                            side_effect=lambda args, task_id: run_analysis(*args)):
             with self.captureOnCommitCallbacks(execute=True):
                 r = self.api.post("/api/analyses/", data, format="multipart")
@@ -106,7 +108,7 @@ class AnalysisApiTests(TestCase):
         self.assertIsNotNone(job.finished_at)
 
     def test_queue_down_saved_as_failure(self):
-        with mock.patch("analyses.views.run_analysis.apply_async", side_effect=ConnectionError("redis down")):
+        with mock.patch("analyses.jobs.run_analysis.apply_async", side_effect=ConnectionError("redis down")):
             with self.captureOnCommitCallbacks(execute=True):
                 r = self.api.post("/api/analyses/", {"input_type": "UPLOAD", "video": video_file()}, format="multipart")
         self.assertEqual(r.status_code, 202)
@@ -318,7 +320,7 @@ class LiveSaveTests(TestCase):
                 mock.patch("analyses.live_views.services.live_clip", return_value=b"\x00\x00\x00\x18ftypmp42clip") as clip, \
                 mock.patch("analyses.tasks.predict_video", return_value=fake_result(1)) as pv, \
                 mock.patch("analyses.tasks.capture_clip") as cap, \
-                mock.patch("analyses.views.run_analysis.apply_async",
+                mock.patch("analyses.jobs.run_analysis.apply_async",
                            side_effect=lambda args, task_id: run_analysis(*args)):
             with self.captureOnCommitCallbacks(execute=True):
                 r = self.api.post(f"/api/live/{self.SID}/save/", body, format="json")
@@ -366,7 +368,7 @@ class LiveSaveTests(TestCase):
             path.write_bytes(b"\x00\x00\x00\x18ftypmp42cap")
         with mock.patch("analyses.tasks.capture_clip", side_effect=fake_capture), \
                 mock.patch("analyses.tasks.predict_video", return_value=fake_result(1)), \
-                mock.patch("analyses.views.run_analysis.apply_async",
+                mock.patch("analyses.jobs.run_analysis.apply_async",
                            side_effect=lambda args, task_id: run_analysis(*args)):
             with self.captureOnCommitCallbacks(execute=True):
                 r = self.api.post("/api/analyses/", {"input_type": "IPWEBCAM", "camera_name": "phone"}, format="multipart")
@@ -381,3 +383,187 @@ class LiveSaveTests(TestCase):
         r = self.api.patch(f"/api/cameras/{cam.id}/", {"rotation": 90}, format="json")
         self.assertEqual((r.status_code, r.data["rotation"]), (200, 90))
         self.assertEqual(self.api.patch(f"/api/cameras/{cam.id}/", {"rotation": 45}, format="json").status_code, 400)
+
+
+def fake_ffmpeg(cmd, **kwargs):
+    """ffmpeg 대신: 마지막 인자(출력 경로)에 가짜 H.264 파일을 쓴다"""
+    from pathlib import Path as _P
+    _P(cmd[-1]).write_bytes(b"h264-playback-copy")
+    return mock.Mock(returncode=0)
+
+
+@override_settings(MEDIA_ROOT=TMP_MEDIA)
+class VideoPlaybackTests(TestCase):
+    """분석한 영상 다시 보기: 재생용 사본·권한·구간 이동(Range)·삭제."""
+
+    def setUp(self):
+        self.a = User.objects.create_user("user_a", password="pw-A-12345")
+        self.b = User.objects.create_user("user_b", password="pw-B-12345")
+        self.staff = User.objects.create_user("boss", password="pw-boss-123", is_staff=True)
+        self.job = AnalysisJob.objects.create(user=self.a, input_type="UPLOAD", status="SUCCESS",
+                                              video=SimpleUploadedFile("clip.mp4", bytes(range(100))))
+
+    def get(self, user, url, **headers):
+        self.client.force_login(user)
+        return self.client.get(url, headers=headers)
+
+    def body(self, r):
+        return b"".join(r.streaming_content) if r.streaming else r.content
+
+    def test_owner_streams_whole_and_range(self):
+        url = f"/analyses/{self.job.pk}/video/"
+        r = self.get(self.a, url)
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r["Accept-Ranges"], "bytes")
+        self.assertEqual(self.body(r), bytes(range(100)))
+        r = self.get(self.a, url, Range="bytes=10-19")       # 영상 중간으로 건너뛸 때 브라우저가 보내는 요청
+        self.assertEqual(r.status_code, 206)
+        self.assertEqual(r["Content-Range"], "bytes 10-19/100")
+        self.assertEqual(self.body(r), bytes(range(10, 20)))
+        r = self.get(self.a, url, Range="bytes=-5")
+        self.assertEqual(self.body(r), bytes(range(95, 100)))
+        self.assertEqual(self.get(self.a, url, Range="bytes=200-").status_code, 416)
+        r = self.get(self.a, url + "?original=1&download=1")
+        self.assertIn("attachment", r["Content-Disposition"])
+
+    def test_other_user_404_staff_can_read(self):
+        url = f"/analyses/{self.job.pk}/"
+        self.assertEqual(self.get(self.b, url + "video/").status_code, 404)
+        self.assertEqual(self.get(self.b, url).status_code, 404)
+        self.assertEqual(self.get(self.staff, url + "video/").status_code, 200)
+        r = self.get(self.staff, url)
+        self.assertEqual(r.status_code, 200)
+        self.assertFalse(r.context["can_edit"])               # 관리자는 남의 기록을 읽기만
+        self.assertNotContains(r, 'id="edit-form"')
+        # API: 관리자는 상세 조회만, 목록·수정·삭제는 본인 것만
+        api = APIClient()
+        api.force_authenticate(self.staff)
+        r = api.get(f"/api/analyses/{self.job.pk}/")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.data["owner"], "user_a")
+        self.assertFalse(r.data["can_edit"])
+        self.assertEqual(api.get("/api/analyses/").data["count"], 0)
+        self.assertEqual(api.patch(f"/api/analyses/{self.job.pk}/", {"title": "x"}).status_code, 404)
+        self.assertEqual(api.delete(f"/api/analyses/{self.job.pk}/").status_code, 404)
+
+    def test_no_video_is_404(self):
+        job = AnalysisJob.objects.create(user=self.a, input_type="IPWEBCAM", status="FAILURE")
+        self.assertEqual(self.get(self.a, f"/analyses/{job.pk}/video/").status_code, 404)
+
+    @mock.patch("analyses.playback.shutil.which", return_value="/usr/bin/ffmpeg")
+    @mock.patch("analyses.playback.subprocess.run", side_effect=fake_ffmpeg)
+    def test_playback_copy_served_first_and_deleted_with_job(self, run, _):
+        from .playback import make_playback
+        self.assertTrue(make_playback(self.job))
+        cmd = run.call_args[0][0]
+        self.assertIn("libx264", cmd)
+        self.assertIn("yuv420p", cmd)
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.playback.name, f"playback/job{self.job.pk}.mp4")
+        r = self.get(self.a, f"/analyses/{self.job.pk}/video/")
+        self.assertEqual(self.body(r), b"h264-playback-copy")
+        r = self.get(self.a, f"/analyses/{self.job.pk}/video/?original=1")
+        self.assertEqual(self.body(r), bytes(range(100)))
+        api = APIClient()
+        api.force_authenticate(self.a)
+        data = api.get(f"/api/analyses/{self.job.pk}/").data
+        self.assertTrue(data["playback_ready"])
+        self.assertEqual(data["video_url"], f"/analyses/{self.job.pk}/video/")
+        self.assertEqual(data["video_size"], 100)
+        paths = [self.job.video.path, self.job.playback.path]
+        self.assertEqual(api.delete(f"/api/analyses/{self.job.pk}/").status_code, 204)
+        self.assertFalse(any(__import__("os").path.exists(p) for p in paths))
+
+    @mock.patch("analyses.playback.shutil.which", return_value="/usr/bin/ffmpeg")
+    @mock.patch("analyses.playback.subprocess.run", side_effect=__import__("subprocess").CalledProcessError(1, "ffmpeg"))
+    def test_ffmpeg_failure_keeps_analysis_result(self, *_):
+        api = APIClient()
+        api.force_authenticate(self.a)
+        with mock.patch("analyses.tasks.predict_video", return_value=fake_result()), \
+                mock.patch("analyses.jobs.run_analysis.apply_async", side_effect=lambda args, task_id: run_analysis(*args)):
+            with self.captureOnCommitCallbacks(execute=True):
+                r = api.post("/api/analyses/", {"input_type": "UPLOAD", "video": video_file()}, format="multipart")
+        job = AnalysisJob.objects.get(pk=r.data["id"])
+        self.assertEqual(job.status, "SUCCESS")                 # 사본 실패는 분석 결과에 영향 없음
+        self.assertFalse(job.playback)
+        self.assertEqual(job.predictions.count(), 2)
+
+    @mock.patch("analyses.playback.shutil.which", return_value="/usr/bin/ffmpeg")
+    @mock.patch("analyses.playback.subprocess.run", side_effect=fake_ffmpeg)
+    def test_backfill_command(self, *_):
+        from io import StringIO
+        from django.core.management import call_command
+        out = StringIO()
+        call_command("make_playback", stdout=out)
+        self.job.refresh_from_db()
+        self.assertTrue(self.job.playback)
+        self.assertIn("완료 1개", out.getvalue())
+
+
+@override_settings(MEDIA_ROOT=TMP_MEDIA)
+class DashboardToolsTests(TestCase):
+    """대시보드 편의 기능: 기간·조건·검색·쪽 나누기·CSV."""
+
+    def setUp(self):
+        self.staff = User.objects.create_user("boss", password="pw-boss-123", is_staff=True)
+        self.a = User.objects.create_user("user_a", password="pw-A-12345")
+        self.b = User.objects.create_user("user_b", password="pw-B-12345")
+        ok = AnalysisJob.objects.create(user=self.a, input_type="UPLOAD", status="SUCCESS", title="=cmd 계산대",
+                                        expected_action="A001")
+        PersonPrediction.objects.create(job=ok, track_id=1, action_id="A001", action_label="kiosk_tap",
+                                        confidence=0.8, window_count=1)
+        bad = AnalysisJob.objects.create(user=self.b, input_type="UPLOAD", status="SUCCESS", expected_action="A003")
+        PersonPrediction.objects.create(job=bad, track_id=1, action_id="A005", action_label="push",
+                                        confidence=0.2, uncertain=True, window_count=1)
+        AnalysisJob.objects.create(user=self.b, input_type="IPWEBCAM", status="FAILURE", error_message="카메라 연결 실패")
+        old = AnalysisJob.objects.create(user=self.a, input_type="UPLOAD", status="SUCCESS")
+        AnalysisJob.objects.filter(pk=old.pk).update(created_at=timezone.now() - timedelta(days=40))
+        self.client.force_login(self.staff)
+
+    def ids(self, r):
+        return [j.pk for j in r.context["page"]]
+
+    @mock.patch("analyses.page_views.health", return_value={"status": "ok"})
+    def test_period_filters_search_and_match(self, _):
+        r = self.client.get("/dashboard/")
+        self.assertEqual(r.context["summary"]["jobs"], 4)
+        r = self.client.get("/dashboard/?period=30d")
+        self.assertEqual(r.context["summary"]["jobs"], 3)                 # 40일 전 기록은 빠짐
+        self.assertEqual(r.context["summary"]["graded"], 2)
+        self.assertEqual(r.context["summary"]["match_pct"], 50.0)
+        self.assertEqual(len(r.context["chart_data"]["trend"]), 31)
+        self.assertEqual(r.context["confusions"][0]["expected"], "A003")
+        self.assertEqual(len(self.ids(self.client.get("/dashboard/?status=FAILURE"))), 1)
+        self.assertEqual(len(self.ids(self.client.get("/dashboard/?uncertain=1"))), 1)
+        self.assertEqual(len(self.ids(self.client.get("/dashboard/?match=bad"))), 1)
+        self.assertEqual(len(self.ids(self.client.get("/dashboard/?match=ok"))), 1)
+        self.assertEqual(len(self.ids(self.client.get("/dashboard/?user=user_b"))), 2)
+        self.assertEqual(len(self.ids(self.client.get("/dashboard/?q=카메라"))), 1)
+        self.assertEqual(len(self.ids(self.client.get("/dashboard/?action=A001"))), 1)
+        r = self.client.get("/dashboard/?period=nonsense&status=WRONG")     # 이상한 값은 오류 없이 0건
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.context["period"], "all")
+
+    @mock.patch("analyses.page_views.health", return_value={"status": "ok"})
+    def test_pagination(self, _):
+        for _ in range(25):
+            AnalysisJob.objects.create(user=self.a, input_type="UPLOAD", status="PENDING")
+        r = self.client.get("/dashboard/?status=PENDING&page=2")
+        self.assertEqual(r.context["page"].number, 2)
+        self.assertEqual(len(self.ids(r)), 5)
+        self.assertIn("status=PENDING", r.context["query"])
+        self.assertNotIn("page=", r.context["query"])
+
+    def test_csv_export_follows_filters_and_escapes_formulas(self):
+        r = self.client.get("/dashboard/?user=user_a&export=csv")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("attachment", r["Content-Disposition"])
+        text = r.content.decode("utf-8-sig")
+        lines = text.strip().splitlines()
+        self.assertEqual(len(lines), 3)                                    # 머리글 + user_a 2건
+        self.assertIn("'=cmd 계산대", text)                                # Excel 수식 실행 방지
+        self.assertIn("일치", text)
+
+    def test_csv_staff_only(self):
+        self.client.force_login(self.a)
+        self.assertEqual(self.client.get("/dashboard/?export=csv").status_code, 302)

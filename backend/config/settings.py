@@ -132,6 +132,8 @@ FASTAPI_TIMEOUT_SECONDS = int(os.environ.get("FASTAPI_TIMEOUT_SECONDS", "600"))
 # 업로드 제한
 MAX_UPLOAD_MB = int(os.environ.get("MAX_UPLOAD_MB", "100"))
 ALLOWED_VIDEO_EXTENSIONS = [".mp4", ".mov", ".avi", ".mkv", ".webm"]
+# 재생용 사본(H.264) 만들 때 쓰는 프로그램. Docker 이미지에는 apt 로 들어 있고, 없으면 원본만 보여 준다
+FFMPEG_BINARY = os.environ.get("FFMPEG_BINARY", "ffmpeg")
 
 # IP Webcam: 허용한 카메라만 이름으로 고른다. 사용자가 임의 URL 을 입력하지 못한다.
 #   카메라 목록은 DB(analyses.Camera)에 있고 관리자만 웹에서 바꾼다.

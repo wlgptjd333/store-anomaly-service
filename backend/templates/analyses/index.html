@@ -14,8 +14,12 @@
   <form id="analysis-form">
     <div class="pane" data-pane="UPLOAD">
       <label>영상 파일 (MP4 등, {{ max_upload_mb }} MB 이하)
-        <input type="file" name="video" accept="video/*">
+        <input type="file" name="video" id="video-input" accept="video/*" data-max-mb="{{ max_upload_mb }}">
       </label>
+      <figure class="preview" id="upload-preview" hidden>
+        <video id="preview-video" controls muted playsinline preload="metadata"></video>
+        <figcaption><span id="preview-info" class="small"></span><br><span id="preview-warn" class="small warn-text"></span></figcaption>
+      </figure>
     </div>
     <div class="pane hidden" data-pane="IPWEBCAM">
       <label>카메라
@@ -112,8 +116,8 @@
 <section class="card">
   <h2>최근 분석 이력</h2>
   <table class="table" id="history">
-    <thead><tr><th>#</th><th>입력</th><th>수행한 동작</th><th>예측 (사람별)</th><th>상태</th><th>처리 시간</th><th>요청 시각</th></tr></thead>
-    <tbody><tr><td colspan="7" class="muted">불러오는 중…</td></tr></tbody>
+    <thead><tr><th>#</th><th>입력</th><th>수행한 동작</th><th>예측 (사람별)</th><th>상태</th><th>영상</th><th>처리 시간</th><th>요청 시각</th></tr></thead>
+    <tbody><tr><td colspan="8" class="muted">불러오는 중…</td></tr></tbody>
   </table>
 </section>
 

@@ -1,5 +1,7 @@
 from django.conf import settings
 from django.db import models
+from django.db.models.signals import post_delete
+from django.dispatch import receiver
 
 from .actions import ACTION_CHOICES
 from .cameras import normalize_camera_url, validate_camera_url
@@ -54,6 +56,8 @@ class AnalysisJob(models.Model):
     memo = models.TextField("메모", blank=True)
     input_type = models.CharField("입력 방식", max_length=10, choices=InputType.choices)
     video = models.FileField("영상", upload_to="videos/%Y/%m/%d/", blank=True)
+    # 브라우저 재생용 사본 (H.264). 원본은 분석 근거로 그대로 두고 따로 만든다 (이유는 playback.py)
+    playback = models.FileField("재생용 영상(H.264)", upload_to="playback/", blank=True)
     camera_name = models.CharField("카메라", max_length=50, blank=True)
     source = models.CharField("영상 확보 방법", max_length=10, choices=Source.choices, blank=True, db_index=True)
     # 장면을 저장할 때 실시간 화면이 보여 준 예측 (저장 영상 분석 결과와 비교용)
@@ -106,3 +110,11 @@ class PersonPrediction(models.Model):
 
     def __str__(self):
         return f"job {self.job_id} · track {self.track_id} · {self.action_id}"
+
+
+@receiver(post_delete, sender=AnalysisJob)
+def delete_video_files(sender, instance, **kwargs):
+    """기록을 지우면 Media 폴더의 원본·재생용 영상도 지운다. API 삭제뿐 아니라 Admin·회원 삭제(CASCADE)도 여기로 온다."""
+    for f in (instance.video, instance.playback):
+        if f:
+            f.delete(save=False)

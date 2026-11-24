@@ -17,14 +17,14 @@ from __future__ import annotations
 import threading
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import cv2
 import numpy as np
 
 from services.action_inference import predict_track
 from services.model_loader import APP_ROOT
-from services.pose_pipeline import TrackData, frame_features
+from services.pose_pipeline import Person, TrackData, track_people
 from src.pose_utils import COCO_SKELETON
 
 # 사람(Track ID)마다 다른 색 (BGR)
@@ -37,11 +37,8 @@ class LiveBusy(Exception):
 
 
 @dataclass
-class _Track:
-    times: list[float] = field(default_factory=list)
-    features: list[np.ndarray] = field(default_factory=list)
-    valid: list[bool] = field(default_factory=list)
-    keypoint_conf: list[float] = field(default_factory=list)
+class _Track(TrackData):
+    """실시간: TrackData + 처음·마지막으로 보인 시각, 최근 window 만 남기기"""
     first_seen: float = 0.0
     last_seen: float = 0.0
 
@@ -236,32 +233,17 @@ class LiveSession:
             if t - fps_t >= 1.0:
                 self.fps, fps_t, fps_n = fps_n / (t - fps_t), t, 0
 
-    def _pose(self, frame: np.ndarray, t: float) -> list[tuple[int, np.ndarray, np.ndarray, np.ndarray]]:
-        cfg = self.cfg
+    def _pose(self, frame: np.ndarray, t: float) -> list[Person]:
         h, w = frame.shape[:2]
         self.frame_size = (w, h)
-        res = self.pose.track(source=frame, persist=True, tracker=cfg["tracker"], imgsz=cfg["image_size"],
-                              conf=cfg["person_confidence"], device=self.device, verbose=False)[0]
-        boxes, kps = res.boxes, res.keypoints
-        if boxes is None or boxes.id is None or kps is None or kps.xy is None:
-            return []
-        ids = boxes.id.int().cpu().tolist()
-        xys = kps.xy.cpu().numpy()
-        confs = kps.conf.cpu().numpy() if kps.conf is not None else np.ones((len(ids), 17), np.float32)
-        bxs = boxes.xyxy.cpu().numpy()
-        people = []
-        for tid, xy, conf, box in zip(ids, xys, confs, bxs):
-            vals, valid = frame_features(xy, conf, w, h, cfg["keypoint_confidence"])
-            tr = self.tracks.get(int(tid))
+        people = track_people(self.pose, frame, self.cfg, self.device)   # 업로드 분석과 같은 함수
+        for person in people:
+            tr = self.tracks.get(person.track_id)
             if tr is None:
-                tr = self.tracks[int(tid)] = _Track(first_seen=t)
-            tr.times.append(t)
-            tr.features.append(vals)
-            tr.valid.append(valid)
-            tr.keypoint_conf.append(float(np.mean(conf)))
+                tr = self.tracks[person.track_id] = _Track(first_seen=t)
+            tr.add(t, person)
             tr.last_seen = t
-            tr.trim(t - cfg["window_seconds"])
-            people.append((int(tid), xy, conf, box))
+            tr.trim(t - self.cfg["window_seconds"])
         return people
 
     def _predict(self, t: float) -> None:
@@ -297,11 +279,12 @@ class LiveSession:
                                  "valid_frames": r["valid_frames"], "streak_seconds": round(streak, 1),
                                  "streak_min_confidence": round(streak_min, 4)}
 
-    def _draw(self, frame: np.ndarray, people) -> None:
+    def _draw(self, frame: np.ndarray, people: list[Person]) -> None:
         kp_min = self.cfg["keypoint_confidence"]
         img = frame.copy()
         s = max(1, round(img.shape[1] / 640))            # 큰 화면에서도 선·글자가 보이게
-        for tid, xy, conf, box in people:
+        for person in people:
+            tid, xy, conf, box = person.track_id, person.xy, person.conf, person.box
             color = PALETTE[tid % len(PALETTE)]
             for a, b in COCO_SKELETON:
                 if conf[a] >= kp_min and conf[b] >= kp_min:

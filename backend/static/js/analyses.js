@@ -1,32 +1,19 @@
 /* 분석 화면 (index.html · detail.html)
- * 흐름: AI 분석 시작 → POST /api/analyses/ (작업 ID 즉시 받음) → /status/ 를 2초마다 조회
- *       → 완료되면 상세 GET 으로 사람별 결과 표시 → 최근 이력 새로고침
- * 구성: Config · Util · Data(API) · View · Handlers · Init · Entry (수업 DRF 문제의 JS 구조와 같음)
+ * 흐름: (업로드 미리보기) → AI 분석 시작 → POST /api/analyses/ (작업 ID 즉시 받음) → /status/ 를 2초마다 조회
+ *       → 완료되면 상세 GET 으로 사람별 결과 + 분석한 영상 표시 → 최근 이력 새로고침
+ * 구성: Config · Util · Data(API) · View · Player · Preview · Handlers · Live · Cameras · Init · Entry
  */
 (function () {
   "use strict";
-
-  // ── Config ──
-  const Config = {
-    api: "/api/analyses/",
-    pollMs: 2000,
-    pollLimit: 450,                       // 2초 × 450 = 15분 (Celery 시간 제한과 같음)
-    capturing: "카메라 녹화 중",           // tasks.py CAPTURING 과 같은 문구
-    captureSeconds() {
-      const el = document.getElementById("live-config");
-      return el ? JSON.parse(el.textContent).capture_seconds : 8;
-    },
-    liveConfig() {
-      const el = document.getElementById("live-config");
-      return el ? JSON.parse(el.textContent) : { min_seconds: 3, cooldown_seconds: 15 };
-    },
-    statusKo: { PENDING: "대기", STARTED: "처리 중", SUCCESS: "완료", FAILURE: "실패" },
-  };
 
   // ── Util ──
   const Util = {
     $(sel, root = document) { return root.querySelector(sel); },
     $$(sel, root = document) { return Array.from(root.querySelectorAll(sel)); },
+    json(id, fallback) {                          // Django json_script 값 읽기
+      const el = document.getElementById(id);
+      return el ? JSON.parse(el.textContent) : fallback;
+    },
     csrf() {
       const m = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/);
       return m ? decodeURIComponent(m[1]) : "";
@@ -36,6 +23,11 @@
     },
     pct(x) { return x == null ? "-" : `${(x * 100).toFixed(0)}%`; },
     sec(x) { return x == null ? "-" : `${Number(x).toFixed(1)}초`; },
+    mb(bytes) { return bytes == null ? "-" : `${(bytes / 1024 / 1024).toFixed(1)} MB`; },
+    clock(s) {                                    // 75.3 → "1:15"
+      const t = Math.max(0, Math.floor(Number(s) || 0));
+      return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`;
+    },
     time(iso) {
       if (!iso) return "-";
       const d = new Date(iso);
@@ -48,16 +40,32 @@
       if (data.detail || data.message) return data.detail || data.message;
       return Object.values(data).flat().join(" ");
     },
-    uncertainBelow() {
-      const el = document.getElementById("uncertain-below");
-      return el ? JSON.parse(el.textContent) : 0.3;
+    flash(sel, text, ok) {                        // 성공(초록)·오류(빨강) 한 줄 안내
+      const el = Util.$(sel);
+      if (!el) return;
+      el.textContent = text || "";
+      el.className = `small ${ok ? "ok-text" : "error"}`;
+      el.hidden = !text;
     },
+  };
+
+  // ── Config ──
+  const Config = {
+    api: "/api/analyses/",
+    pollMs: 2000,
+    pollLimit: 450,                       // 2초 × 450 = 15분 (Celery 시간 제한과 같음)
+    capturing: "카메라 녹화 중",           // tasks.py CAPTURING 과 같은 문구
+    live: () => Util.json("live-config", { min_seconds: 3, cooldown_seconds: 15, capture_seconds: 8 }),
+    uncertainBelow: () => Util.json("uncertain-below", 0.3),
+    actionNames: () => Util.json("action-names", {}),
+    statusKo: { PENDING: "대기", STARTED: "처리 중", SUCCESS: "완료", FAILURE: "실패" },
+    preview: { longSeconds: 60, shortSeconds: 3, cpuFactor: 2.5 },   // 미리보기 안내 기준 (Docker CPU 실측: 영상 1초 ≈ 처리 2~2.5초)
   };
 
   // ── Data (DRF API) ──
   const http = axios.create({ headers: { "X-CSRFToken": Util.csrf() } });
   const Data = {
-    create: (formData) => http.post(Config.api, formData).then((r) => r.data),
+    create: (formData, onUploadProgress) => http.post(Config.api, formData, { onUploadProgress }).then((r) => r.data),
     list: () => http.get(Config.api).then((r) => r.data.results ?? r.data),
     detail: (id) => http.get(`${Config.api}${id}/`).then((r) => r.data),
     status: (id) => http.get(`${Config.api}${id}/status/`).then((r) => r.data),
@@ -81,28 +89,29 @@
     badge(status) {
       return `<span class="badge s-${status}">${Config.statusKo[status] ?? status}</span>`;
     },
+    actionText(a, prob = a.confidence) {          // "A001 키오스크 두드리기 77%"
+      return `${Util.esc(a.action_id)} ${Util.esc(a.action_name_ko)} ${Util.pct(prob)}`;
+    },
+    confidenceCell(p) {
+      return `<div class="bar"><span style="width:${(p.confidence * 100).toFixed(0)}%"></span></div>${Util.pct(p.confidence)}`
+        + (p.uncertain ? '<br><span class="badge warn">판단 불확실</span>' : "");
+    },
     predictionLine(p) {
-      const flag = p.uncertain ? ' <span class="badge warn">판단 불확실</span>' : "";
-      return `#${p.track_id} ${Util.esc(p.action_id)} ${Util.esc(p.action_name_ko)} ${Util.pct(p.confidence)}${flag}`;
+      return `#${p.track_id} ${View.actionText(p)}${p.uncertain ? ' <span class="badge warn">판단 불확실</span>' : ""}`;
     },
     resultTable(job) {
-      if (job.status === "FAILURE") {
-        return `<p class="error">실패 사유: ${Util.esc(job.error_message)}</p>`;
-      }
+      if (job.status === "FAILURE") return `<p class="error">실패 사유: ${Util.esc(job.error_message)}</p>`;
       if (job.status !== "SUCCESS") return "";
-      if (!job.predictions.length) {
-        return `<p class="warn-text">${Util.esc(job.result_message || "예측 결과가 없습니다.")}</p>`;
-      }
-      const limit = Util.uncertainBelow();
+      if (!job.predictions.length) return `<p class="warn-text">${Util.esc(job.result_message || "예측 결과가 없습니다.")}</p>`;
       const rows = job.predictions.map((p) => {
         const match = job.expected_action
           ? (job.expected_action === p.action_id ? '<span class="badge ok">일치</span>' : '<span class="badge bad">불일치</span>')
           : "-";
-        const top3 = p.top3.map((t) => `${Util.esc(t.action_id)} ${Util.esc(t.action_name_ko)} ${Util.pct(t.probability)}`).join("<br>");
+        const top3 = p.top3.map((t) => View.actionText(t, t.probability)).join("<br>");
         return `<tr class="${p.uncertain ? "uncertain" : ""}">
           <td>#${p.track_id}</td>
           <td><strong>${Util.esc(p.action_id)} ${Util.esc(p.action_name_ko)}</strong><br><span class="muted">${Util.esc(p.action_label)} · ${Util.esc(p.category_ko)}</span></td>
-          <td><div class="bar"><span style="width:${(p.confidence * 100).toFixed(0)}%"></span></div>${Util.pct(p.confidence)}${p.uncertain ? '<br><span class="badge warn">판단 불확실</span>' : ""}</td>
+          <td>${View.confidenceCell(p)}</td>
           <td>${match}</td>
           <td class="small">${top3}</td>
           <td class="small">창 ${p.window_count}개<br>유효 Frame ${p.valid_frames}<br>${Util.sec(p.track_seconds)} 보임<br>관절 Conf ${p.mean_keypoint_conf ?? "-"}</td>
@@ -111,7 +120,7 @@
       return `<table class="table">
         <thead><tr><th>Track</th><th>예측 동작</th><th>Confidence</th><th>수행한 동작과</th><th>상위 3개</th><th>입력 품질</th></tr></thead>
         <tbody>${rows}</tbody></table>
-        <p class="muted small">Confidence ${Util.pct(limit)} 미만은 '판단 불확실'로 표시합니다. 17개 동작 중 하나를 고르는 모델이라, 학습하지 않은 동작에도 가장 가까운 동작을 답합니다.</p>`;
+        <p class="muted small">Confidence ${Util.pct(Config.uncertainBelow())} 미만은 '판단 불확실'로 표시합니다. 17개 동작 중 하나를 고르는 모델이라, 학습하지 않은 동작에도 가장 가까운 동작을 답합니다.</p>`;
     },
     steps(status) {
       const order = ["PENDING", "STARTED", "DONE"];
@@ -128,10 +137,15 @@
       let msg = { PENDING: "작업을 대기열에 넣었습니다. 앞 작업이 끝나면 시작합니다.", STARTED: "AI 서버가 영상을 분석하고 있습니다…" }[job.status];
       const recording = job.status === "STARTED" && job.result_message === Config.capturing;
       if (job.status === "STARTED" && job.result_message) msg = job.result_message;
-      if (recording) msg = `● 지금 녹화 중 — 카메라 앞에서 동작하세요 (${Config.captureSeconds()}초)`;
+      if (recording) msg = `● 지금 녹화 중 — 카메라 앞에서 동작하세요 (${Config.live().capture_seconds}초)`;
       Util.$("#current-message").className = recording ? "recording" : "muted";
       Util.$("#current-message").textContent = msg ?? (job.processing_seconds ? `AI 처리 ${Util.sec(job.processing_seconds)} · 영상 ${Util.sec(job.video_seconds)}` : "");
-      Util.$("#current-result").innerHTML = job.predictions ? View.resultTable(job) + `<p><a href="/analyses/${job.id}/">상세 보기 →</a></p>` : "";
+      if (!job.predictions) { Util.$("#current-result").innerHTML = ""; return; }
+      // 끝난 작업: 결과표 + 분석한 영상(녹화본 포함)을 바로 확인
+      const video = job.video_url
+        ? `<video class="mini" controls preload="metadata" playsinline muted src="${Player.src(job)}"></video>` : "";
+      Util.$("#current-result").innerHTML = `<div class="current-grid">${video}<div>${View.resultTable(job)}</div></div>`
+        + `<p><a href="/analyses/${job.id}/">상세 보기 (구간별 예측·영상 이동) →</a></p>`;
     },
     history(jobs) {
       const body = Util.$("#history tbody");
@@ -142,20 +156,22 @@
           <td>${j.expected_action ? Util.esc(j.expected_action_display) : "-"}</td>
           <td>${j.predictions.map(View.predictionLine).join("<br>") || (j.status === "FAILURE" ? `<span class="error">${Util.esc(j.error_message)}</span>` : Util.esc(j.result_message) || "-")}</td>
           <td>${View.badge(j.status)}</td>
+          <td class="nowrap">${j.video_url ? `<a href="/analyses/${j.id}/#video">▶ 보기</a>` : "-"}</td>
           <td class="nowrap">${Util.sec(j.processing_seconds)}</td>
           <td class="nowrap">${Util.time(j.created_at)}</td></tr>`).join("")
-        : '<tr><td colspan="7" class="muted">아직 분석 기록이 없습니다.</td></tr>';
+        : '<tr><td colspan="8" class="muted">아직 분석 기록이 없습니다.</td></tr>';
     },
     detail(job) {
       Util.$("#detail-status").outerHTML = `<span id="detail-status">${View.badge(job.status)}</span>`;
       const meta = [
+        ...(job.can_edit ? [] : [["회원", Util.esc(job.owner)]]),
         ["입력 방식", job.input_type_display + (job.camera_name ? ` (${Util.esc(job.camera_name)})` : "")
           + (job.source_display ? ` · ${Util.esc(job.source_display)}` : "")],
         ...(job.live_snapshot && job.live_snapshot.length ? [["저장 당시 실시간 예측",
-          job.live_snapshot.map((p) => `#${p.track_id} ${Util.esc(p.action_id)} ${Util.esc(p.action_name_ko)} ${Util.pct(p.confidence)}`
+          job.live_snapshot.map((p) => `#${p.track_id} ${View.actionText(p)}`
             + (p.streak_seconds ? ` (${Util.sec(p.streak_seconds)} 이어짐)` : "")).join("<br>")
           + '<br><span class="muted small">아래 결과는 저장한 영상을 업로드와 같은 방법으로 다시 분석한 값입니다 (Track 번호는 다시 매김).</span>']] : []),
-        ["영상", Util.esc(job.video_name) || "-"],
+        ["영상", job.video_name ? `${Util.esc(job.video_name)} (${Util.mb(job.video_size)})` : "-"],
         ["수행한 동작(사용자 선택)", job.expected_action ? Util.esc(job.expected_action_display) : "-"],
         ["영상 길이 / AI 처리 시간", `${Util.sec(job.video_seconds)} / ${Util.sec(job.processing_seconds)}`],
         ["요청 / 완료", `${Util.time(job.created_at)} / ${Util.time(job.finished_at)}`],
@@ -163,6 +179,103 @@
       ];
       Util.$("#detail-meta").innerHTML = meta.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
       Util.$("#detail-result").innerHTML = View.resultTable(job) || `<p class="muted">${Config.statusKo[job.status]}…</p>`;
+      Player.show(job);
+    },
+  };
+
+  // ── Player: 결과 화면의 분석 영상 + 구간별 예측 (누르면 그 시점으로) ──
+  const Player = {
+    src(job) {                                    // 재생용 사본이 생기면 주소가 바뀌어 새로 받는다
+      return `${job.video_url}?v=${job.playback_ready ? "p" : "o"}`;
+    },
+    show(job) {
+      const box = Util.$("#video-box");
+      if (!box) return;
+      box.hidden = !job.video_url;
+      if (!job.video_url) { Util.$("#video-windows").innerHTML = ""; return; }
+      const v = Util.$("#job-video");
+      const want = Player.src(job);
+      if (v.dataset.src !== want) {               // 상태 조회 때마다 다시 넣으면 재생이 처음으로 돌아감
+        v.dataset.src = want;
+        v.src = want;
+      }
+      const kind = job.playback_ready ? "브라우저 재생용 사본 (H.264 · 최대 720p · 소리 없음)" : "원본 영상";
+      Util.$("#video-note").innerHTML = `${kind} · <a href="${job.download_url}">원본 내려받기</a>`;
+      v.onerror = () => {
+        Util.$("#video-note").innerHTML = `<span class="warn-text">이 브라우저에서 재생할 수 없는 형식입니다${job.playback_ready ? "" : " (재생용 사본을 만드는 중이거나 실패)"}.</span>`
+          + ` <a href="${job.download_url}">원본 내려받기</a>`;
+      };
+      Player.windows(job);
+    },
+    windows(job) {
+      const el = Util.$("#video-windows");
+      const tracks = (job.predictions || []).filter((p) => p.windows && p.windows.length);
+      if (!tracks.length) { el.innerHTML = ""; return; }
+      const names = Config.actionNames();
+      const limit = Config.uncertainBelow();
+      el.innerHTML = `<h2>구간별 예측 <span class="muted small">버튼을 누르면 영상이 그 시점으로 이동합니다 · 재생 중인 구간은 진하게</span></h2>`
+        + tracks.map((p) => `<div class="win-row"><span class="win-track">#${p.track_id}</span>${p.windows.map((w) =>
+          `<button type="button" class="win ${w.action_id === p.action_id ? "same" : ""} ${w.confidence < limit ? "low" : ""}"
+             data-start="${w.start_sec}" data-end="${w.end_sec}"
+             title="${Util.esc(w.action_id)} ${Util.esc(names[w.action_id] || "")} · Confidence ${Util.pct(w.confidence)}">
+             <span>${Util.clock(w.start_sec)}–${Util.clock(w.end_sec)}</span> ${Util.esc(w.action_id)} ${Util.esc(names[w.action_id] || "")} ${Util.pct(w.confidence)}</button>`).join("")}</div>`).join("")
+        + '<p class="muted small">창마다 따로 예측한 값입니다. 사람별 최종 예측은 이 창들의 확률 평균이며, 최종과 같은 동작인 창은 테두리로 표시합니다.</p>';
+    },
+    seek(e) {
+      const btn = e.target.closest("button.win");
+      if (!btn) return;
+      const v = Util.$("#job-video");
+      v.currentTime = Number(btn.dataset.start);
+      v.play().catch(() => {});
+      v.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    },
+    highlight() {
+      const t = Util.$("#job-video").currentTime;
+      Util.$$("#video-windows button.win").forEach((b) =>
+        b.classList.toggle("playing", t >= Number(b.dataset.start) && t < Number(b.dataset.end)));
+    },
+  };
+
+  // ── Preview: 업로드 전 영상 미리보기 + 길이·용량 안내 ──
+  const Preview = {
+    url: null,
+    clear() {
+      if (Preview.url) URL.revokeObjectURL(Preview.url);
+      Preview.url = null;
+      const box = Util.$("#upload-preview");
+      if (!box) return;
+      box.hidden = true;
+      Util.$("#preview-video").removeAttribute("src");
+      Util.$("#preview-video").load();
+    },
+    show(e) {
+      Preview.clear();
+      const file = e.currentTarget.files[0];
+      if (!file) return;
+      const maxMb = Number(e.currentTarget.dataset.maxMb || 100);
+      const v = Util.$("#preview-video");
+      const info = Util.$("#preview-info");
+      const warn = Util.$("#preview-warn");
+      Preview.url = URL.createObjectURL(file);
+      Util.$("#upload-preview").hidden = false;
+      info.textContent = `${file.name} · ${Util.mb(file.size)} · 길이 확인 중…`;
+      warn.textContent = file.size > maxMb * 1024 * 1024 ? `${maxMb} MB 를 넘어 올릴 수 없습니다. 짧게 자르거나 해상도를 낮추세요.` : "";
+      v.onloadedmetadata = () => {
+        const d = v.duration;
+        const c = Config.preview;
+        info.textContent = `${file.name} · ${Util.mb(file.size)} · ${Util.sec(d)} · ${v.videoWidth}×${v.videoHeight}`
+          + ` · 예상 분석 시간 약 ${Math.max(5, Math.round(d * c.cpuFactor))}초 (CPU)`;
+        const notes = [];
+        if (warn.textContent) notes.push(warn.textContent);
+        if (d > c.longSeconds) notes.push(`${c.longSeconds}초보다 길면 여러 동작이 섞여 사람별 평균이 흐려질 수 있습니다. 동작 하나가 담긴 구간을 추천합니다.`);
+        if (d < c.shortSeconds) notes.push("너무 짧아 사람을 충분히 추적하지 못할 수 있습니다 (8초 안팎 추천).");
+        if (v.videoHeight > v.videoWidth) notes.push("세로 영상입니다. 사람이 똑바로 서 보이면 괜찮습니다.");
+        warn.textContent = notes.join(" ");
+      };
+      v.onerror = () => {
+        info.textContent = `${file.name} · ${Util.mb(file.size)} — 이 브라우저에서는 미리보기를 재생할 수 없는 형식입니다 (분석은 서버에서 가능).`;
+      };
+      v.src = Preview.url;
     },
   };
 
@@ -204,10 +317,12 @@
       ["expected_action", "title"].forEach((k) => fd.append(k, form[k].value));
       btn.disabled = true;
       btn.textContent = "요청 중…";
+      const progress = (ev) => { if (ev.total) btn.textContent = `올리는 중 ${Math.round((ev.loaded / ev.total) * 100)}%`; };
       try {
-        const created = await Data.create(fd);   // 202: 분석은 아직, 작업 ID 만 받음
+        const created = await Data.create(fd, state.input === "UPLOAD" ? progress : undefined);   // 202: 작업 ID 만 받음
         Handlers.track(created);
         form.reset();
+        Preview.clear();
       } catch (ex) {
         err.textContent = Util.errorText(ex);
         err.hidden = false;
@@ -216,10 +331,14 @@
         btn.textContent = "AI 분석 시작";
       }
     },
+    finished(job) {
+      View.current(job);
+      Handlers.refreshHistory();
+    },
     track(created) {                              // 작업 ID 를 받은 뒤 상태 조회 시작 (분석 시작·장면 저장·자동 감지 공통)
       View.current({ id: created.id, status: created.status });
       clearTimeout(state.polling);
-      poll(created.id, (job) => { View.current(job); Handlers.refreshHistory(); });
+      poll(created.id, Handlers.finished);
       Handlers.refreshHistory();
     },
     async refreshHistory() {
@@ -270,12 +389,12 @@
         if (p.status !== "ok") {
           return `<tr><td>#${p.track_id}</td><td class="muted">판단 중… (${Util.sec(p.seen_seconds)} 보임)<br><span class="small">${Util.esc(p.reason)}</span></td><td>-</td></tr>`;
         }
-        const top3 = p.top3.slice(1).map((t) => `${Util.esc(t.action_id)} ${Util.esc(t.action_name_ko)} ${Util.pct(t.probability)}`).join(" · ");
+        const next = p.top3.slice(1).map((t) => View.actionText(t, t.probability)).join(" · ");
         const streak = p.streak_seconds ? ` · ${Util.sec(p.streak_seconds)}째 같은 동작` : "";
         return `<tr class="${p.uncertain ? "uncertain" : ""}">
           <td>#${p.track_id}</td>
-          <td><strong>${Util.esc(p.action_id)} ${Util.esc(p.action_name_ko)}</strong><br><span class="muted small">다음 후보: ${top3}${streak}</span></td>
-          <td><div class="bar"><span style="width:${(p.confidence * 100).toFixed(0)}%"></span></div>${Util.pct(p.confidence)}${p.uncertain ? '<br><span class="badge warn">판단 불확실</span>' : ""}</td></tr>`;
+          <td><strong>${Util.esc(p.action_id)} ${Util.esc(p.action_name_ko)}</strong><br><span class="muted small">다음 후보: ${next}${streak}</span></td>
+          <td>${View.confidenceCell(p)}</td></tr>`;
       }).join("");
     },
     async start() {
@@ -318,12 +437,6 @@
     // ── 장면 저장 · 자동 감지 ──
     lastAuto: 0,
     saving: false,
-    saveMessage(text, ok) {
-      const el = Util.$("#live-save-message");
-      el.textContent = text;
-      el.className = `small ${ok ? "ok-text" : "error"}`;
-      el.hidden = !text;
-    },
     async save(auto = false) {
       if (!Live.sid || Live.saving) return;
       const form = Util.$("#analysis-form");
@@ -336,12 +449,12 @@
           expected_action: form.expected_action.value, title: auto ? "" : form.title.value,
         });
         if (auto) Live.lastAuto = Date.now();
-        Live.saveMessage(`${auto ? "자동 감지로" : ""} 저장했습니다 → 분석 #${created.id}${created.title ? ` (${created.title})` : ""}`, true);
+        Util.flash("#live-save-message", `${auto ? "자동 감지로" : ""} 저장했습니다 → 분석 #${created.id}${created.title ? ` (${created.title})` : ""}`, true);
         Handlers.track(created);
       } catch (ex) {
         const code = ex?.response?.status;
         if (auto && (code === 409 || code === 429)) { if (code === 429) Live.lastAuto = Date.now(); return; }  // 조건 아님·간격 — 조용히
-        Live.saveMessage(Util.errorText(ex), false);
+        Util.flash("#live-save-message", Util.errorText(ex), false);
       } finally {
         Live.saving = false;
         btn.disabled = false;
@@ -350,7 +463,7 @@
     autoCheck(snap) {
       // 브라우저는 '조건이 된 것 같다'만 보고 요청하고, 실제 판단은 서버(live_views._auto_hit)가 다시 한다
       if (!Util.$("#live-auto").checked || snap.state !== "running") return;
-      const cfg = Config.liveConfig();
+      const cfg = Config.live();
       if (Date.now() - Live.lastAuto < cfg.cooldown_seconds * 1000) return;
       const min = Number(Util.$("#live-auto-threshold").value);
       const hit = snap.people.some((p) => p.status === "ok" && p.streak_seconds >= cfg.min_seconds && p.streak_min_confidence >= min);
@@ -380,12 +493,7 @@
   // ── 카메라 주소 관리 (관리자만 화면에 있음) ──
   const Cameras = {
     rotations: [[0, "0°"], [90, "시계 90°"], [180, "180°"], [270, "반시계 90°"]],
-    message(text, ok) {
-      const el = Util.$("#camera-message");
-      el.textContent = text;
-      el.className = `small ${ok ? "ok-text" : "error"}`;
-      el.hidden = !text;
-    },
+    message: (text, ok) => Util.flash("#camera-message", text, ok),
     async refresh() {
       const list = await Data.cameras();
       // 분석용 선택 목록 (사용 중인 카메라만)
@@ -462,6 +570,7 @@
     index() {
       Util.$$(".tab").forEach((t) => t.addEventListener("click", Handlers.switchTab));
       Util.$("#analysis-form").addEventListener("submit", Handlers.submit);
+      Util.$("#video-input").addEventListener("change", Preview.show);
       Util.$("#live-btn").addEventListener("click", Live.toggle);
       Util.$("#live-save-btn").addEventListener("click", () => Live.save(false));
       window.addEventListener("pagehide", Live.leave);
@@ -470,13 +579,13 @@
         Util.$("#camera-add").addEventListener("click", Cameras.add);
         Cameras.refresh().catch((ex) => Cameras.message(Util.errorText(ex), false));
       }
-      Handlers.refreshHistory();
-      // 새로고침 전에 진행 중이던 작업이 있으면 이어서 조회
+      // 이력 표시 + 새로고침 전에 진행 중이던 작업이 있으면 이어서 조회 (목록 요청 한 번)
       Data.list().then((jobs) => {
+        View.history(jobs);
         const running = jobs.find((j) => !j.is_finished);
         if (running) {
           View.current(running);
-          poll(running.id, (job) => { View.current(job); Handlers.refreshHistory(); });
+          poll(running.id, Handlers.finished);
         }
       }).catch(() => {});
     },
@@ -486,8 +595,12 @@
         View.detail(job);
         if (!job.is_finished) poll(id, View.detail);
       });
-      Util.$("#edit-form").addEventListener("submit", Handlers.saveEdit);
-      Util.$("#delete-btn").addEventListener("click", Handlers.remove);
+      Util.$("#video-windows").addEventListener("click", Player.seek);
+      Util.$("#job-video").addEventListener("timeupdate", Player.highlight);
+      if (Util.$("#edit-form")) {                          // 관리자가 남의 기록을 볼 때는 없음
+        Util.$("#edit-form").addEventListener("submit", Handlers.saveEdit);
+        Util.$("#delete-btn").addEventListener("click", Handlers.remove);
+      }
     },
   };
 

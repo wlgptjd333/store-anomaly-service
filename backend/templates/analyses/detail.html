@@ -3,12 +3,21 @@
 {% block title %}분석 #{{ job.pk }}{% endblock %}
 {% block content %}
 <section class="card" id="detail" data-job-id="{{ job.pk }}">
-  <p><a href="{% url 'analyses:index' %}">← 분석 화면</a></p>
-  <h1>분석 #{{ job.pk }} <span class="badge" id="detail-status"></span></h1>
-  <dl class="meta" id="detail-meta"></dl>
+  <p><a href="{% url 'analyses:index' %}">← 분석 화면</a>{% if user.is_staff %} · <a href="{% url 'analyses:dashboard' %}#jobs">대시보드 목록</a>{% endif %}</p>
+  {% if not can_edit %}<p class="notice">관리자 보기 — 회원 <strong>{{ job.user.username }}</strong>의 기록입니다. 읽기만 할 수 있습니다.</p>{% endif %}
+  <h1>분석 #{{ job.pk }} <span class="badge" id="detail-status"></span>{% if job.title %} <span class="muted">{{ job.title }}</span>{% endif %}</h1>
+  <div class="detail-grid" id="video">
+    <figure class="video-box" id="video-box" hidden>
+      <video id="job-video" controls preload="metadata" playsinline muted></video>
+      <figcaption class="small muted" id="video-note"></figcaption>
+    </figure>
+    <dl class="meta" id="detail-meta"></dl>
+  </div>
+  <div id="video-windows"></div>
   <div id="detail-result"></div>
 </section>
 
+{% if can_edit %}
 <section class="card">
   <h2>제목·메모 수정</h2>
   <p class="muted">상태와 AI 예측값은 바꿀 수 없습니다.</p>
@@ -20,7 +29,11 @@
     <span id="edit-message" class="muted"></span>
   </form>
 </section>
+{% elif job.memo %}
+<section class="card"><h2>메모</h2><p>{{ job.memo|linebreaksbr }}</p></section>
+{% endif %}
 {{ uncertain_below|json_script:"uncertain-below" }}
+{{ action_names|json_script:"action-names" }}
 {% endblock %}
 {% block scripts %}
 <script src="https://cdn.jsdelivr.net/npm/axios@1.7.7/dist/axios.min.js"></script>

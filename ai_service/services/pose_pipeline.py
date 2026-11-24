@@ -35,10 +35,28 @@ class VideoReadError(Exception):
 
 @dataclass
 class TrackData:
+    """사람 한 명의 Frame 별 값 (업로드 분석은 영상 전체, 실시간 보기는 최근 8초만)"""
     times: list[float] = field(default_factory=list)
     features: list[np.ndarray] = field(default_factory=list)
     valid: list[bool] = field(default_factory=list)
     keypoint_conf: list[float] = field(default_factory=list)
+
+    def add(self, t: float, person: "Person") -> None:
+        self.times.append(t)
+        self.features.append(person.values)
+        self.valid.append(person.valid)
+        self.keypoint_conf.append(float(np.mean(person.conf)))
+
+
+@dataclass
+class Person:
+    """Frame 하나에서 찾은 사람 한 명"""
+    track_id: int
+    xy: np.ndarray            # 17×2 px
+    conf: np.ndarray          # 17
+    box: np.ndarray           # x1,y1,x2,y2 (실시간 화면에 그릴 때)
+    values: np.ndarray        # Frame Feature 40
+    valid: bool
 
 
 @dataclass
@@ -78,6 +96,24 @@ def frame_features(xy: np.ndarray, conf: np.ndarray, img_w: int, img_h: int, kp_
     return values, body_ok and feature_ok and bool(np.all(np.isfinite(values)))
 
 
+def track_people(pose_model, frame: np.ndarray, cfg: dict, device, persist: bool = True) -> list[Person]:
+    """Frame 하나 → YOLO Pose + ByteTrack → 사람별 Feature. 업로드 분석과 실시간 보기가 같이 쓴다 (규칙이 갈라지지 않게)."""
+    h, w = frame.shape[:2]
+    res = pose_model.track(source=frame, persist=persist, tracker=cfg["tracker"], imgsz=cfg["image_size"],
+                           conf=cfg["person_confidence"], device=device, verbose=False)[0]
+    boxes, kps = res.boxes, res.keypoints
+    if boxes is None or boxes.id is None or kps is None or kps.xy is None:
+        return []
+    ids = boxes.id.int().cpu().tolist()
+    xys = kps.xy.cpu().numpy()
+    confs = kps.conf.cpu().numpy() if kps.conf is not None else np.ones((len(ids), 17), np.float32)
+    people = []
+    for tid, xy, conf, box in zip(ids, xys, confs, boxes.xyxy.cpu().numpy()):
+        values, valid = frame_features(xy, conf, w, h, cfg["keypoint_confidence"])
+        people.append(Person(int(tid), xy, conf, box, values, valid))
+    return people
+
+
 def extract_tracks(video_path: str, pose_model, cfg: dict, device) -> VideoResult:
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
@@ -101,23 +137,9 @@ def extract_tracks(video_path: str, pose_model, cfg: dict, device) -> VideoResul
                 continue
             used += 1
             h, w = frame.shape[:2]
-            result = pose_model.track(source=frame, persist=used > 1, tracker=cfg["tracker"],
-                                      imgsz=cfg["image_size"], conf=cfg["person_confidence"],
-                                      device=device, verbose=False)[0]
-            boxes, kps = result.boxes, result.keypoints
-            if boxes is None or boxes.id is None or kps is None or kps.xy is None:
-                continue
-            ids = boxes.id.int().cpu().tolist()
-            xys = kps.xy.cpu().numpy()
-            confs = kps.conf.cpu().numpy() if kps.conf is not None else np.ones((len(ids), 17), np.float32)
             t = (n - 1) / fps
-            for tid, xy, conf in zip(ids, xys, confs):
-                vals, valid = frame_features(xy, conf, w, h, cfg["keypoint_confidence"])
-                tr = tracks.setdefault(int(tid), TrackData())
-                tr.times.append(t)
-                tr.features.append(vals)
-                tr.valid.append(valid)
-                tr.keypoint_conf.append(float(np.mean(conf)))
+            for person in track_people(pose_model, frame, cfg, device, persist=used > 1):
+                tracks.setdefault(person.track_id, TrackData()).add(t, person)
     cap.release()
     if n == 0:
         raise VideoReadError("영상에서 Frame 을 읽지 못했습니다. 파일이 손상됐거나 지원하지 않는 형식입니다.")
