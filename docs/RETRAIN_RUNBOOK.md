@@ -117,7 +117,7 @@ python scripts/15_export_service_model.py --model rf --extras "" --views FS --no
 
 - 출력 `artifacts/service/` 의 3개 파일: `action_model.joblib`, `feature_columns.json`, `training_info.json`
 - 화면에 Train S01~S03 → Validation S04 / Test S05 정확도가 방향별로 나옴 (기록용, `training_info.json` 에도 저장). 최종 모델은 5명 전부로 학습.
-- 동작 이름·분류(서비스 화면·대시보드에 보이는 것)는 `configs/action_classes.csv` → `training_info.json` 의 `class_info` 로 들어갑니다. `action_classes.csv` 는 `01` 이 `ACTIONS` 목록으로 다시 쓰므로 **이름을 바꿀 땐 `01` 의 `ACTIONS` 를 고침**.
+- 서비스 화면·대시보드에 보이는 번호·이름은 **팀 통일 표기**(A001 `kiosk_tap` 키오스크 두드리기 …): `15` 가 [`configs/unified_label_map.csv`](../configs/unified_label_map.csv) 로 Class 를 바꿔 `training_info.json` 의 `class_info` 에 넣음 (분류는 `configs/action_classes.csv`). 이름을 바꾸려면 `unified_label_map.csv` 를 고치고, 서비스 `backend/analyses/actions.py` 도 같이 (Django 는 그 목록으로 화면·대시보드를 그림). 예전 번호로 내보내기는 `--repo-ids`.
 
 ## 4. 서비스에 넣기 (store-anomaly-service)
 

@@ -51,6 +51,7 @@ SPLIT = json.loads((ROOT / "configs" / "subject_split.json").read_text(encoding=
 PROJECT = json.loads((ROOT / "configs" / "project.json").read_text(encoding="utf-8"))
 DATA = ROOT / "reports" / "dataset" / "sequence_dataset_whole.csv"
 OUT = ROOT / "artifacts" / "service"
+UNIFIED_MAP = ROOT / "configs" / "unified_label_map.csv"
 STEPS = CFG["sequence_steps"]
 
 KP = ["nose", "left_eye", "right_eye", "left_ear", "right_ear", "left_shoulder", "right_shoulder",
@@ -73,6 +74,8 @@ def parse_args():
     ap.add_argument("--no-flip", action="store_true", help="좌우 반전 복사본을 더하지 않음")
     ap.add_argument("--model", choices=["et", "rf"], default="et", help="et = ExtraTrees 1000, rf = RandomForest 300")
     ap.add_argument("--extras", default="velocity,stats", help='덧붙일 Feature (velocity, stats). 없으면 ""')
+    ap.add_argument("--repo-ids", action="store_true",
+                    help="Class 를 이 저장소 번호(A01..)로. 기본은 팀 통일 번호(A001.., unified_label_map.csv)")
     return ap.parse_args()
 
 
@@ -106,6 +109,16 @@ def main() -> None:
     df = pd.read_csv(DATA)
     df = df[df.view.isin(views)].reset_index(drop=True)
     acts = {r["action_id"]: r for r in csv.DictReader((ROOT / "configs" / "action_classes.csv").open(encoding="utf-8-sig"))}
+    if not args.repo_ids:
+        # 서비스·대시보드는 팀 통일 번호·이름(A001 kiosk_tap 키오스크 두드리기 ..)으로 보여 준다 (11/24).
+        # 순서가 같아(A01→A001 …) 학습 결과·예측은 이 저장소 번호로 학습한 것과 같다.
+        umap = [r for r in csv.DictReader(UNIFIED_MAP.open(encoding="utf-8-sig")) if r["kind"] == "action"]
+        to_u = {r["team_repo_id"]: r["unified_id"] for r in umap}
+        acts = {r["unified_id"]: {"action_label": r["unified_label"], "name_ko": r["unified_name_ko"],
+                                  "category": acts[r["team_repo_id"]].get("category", ""),
+                                  "repo_action_id": r["team_repo_id"]} for r in umap}
+        df["action_id"] = df["action_id"].astype(str).map(to_u)
+        assert df["action_id"].notna().all()
     y = df["action_id"].astype(str).to_numpy()
     X = add_extras(df[COLUMNS].to_numpy(float), STEPS, len(FRAME_FEATURES), extras)
     names = COLUMNS + extra_names(FRAME_FEATURES, STEPS, extras)
@@ -151,7 +164,10 @@ def main() -> None:
         "n_features": len(names),
         "classes": classes,
         "class_info": {c: {"label": acts[c]["action_label"], "name_ko": acts[c]["name_ko"],
-                           "category": acts[c].get("category", "")} for c in classes},
+                           "category": acts[c].get("category", ""),
+                           **({"repo_action_id": acts[c]["repo_action_id"]} if "repo_action_id" in acts[c] else {})}
+                       for c in classes},
+        "class_ids": "repo" if args.repo_ids else "unified",
         "model_params": params,
         "pose": {"model": PROJECT["pose_model"], "image_size": PROJECT["image_size"],
                  "person_confidence": PROJECT["person_confidence"],

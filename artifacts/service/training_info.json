@@ -51,111 +51,129 @@
   ],
   "n_features": 2560,
   "classes": [
-    "A01",
-    "A02",
-    "A03",
-    "A04",
-    "A05",
-    "A06",
-    "A07",
-    "A08",
-    "A09",
-    "A10",
-    "A11",
-    "A12",
-    "A13",
-    "A14",
-    "A15",
-    "A16",
-    "A17"
+    "A001",
+    "A002",
+    "A003",
+    "A004",
+    "A005",
+    "A006",
+    "A007",
+    "A008",
+    "A009",
+    "A010",
+    "A011",
+    "A012",
+    "A013",
+    "A014",
+    "A015",
+    "A016",
+    "A017"
   ],
   "class_info": {
-    "A01": {
-      "label": "kiosk_slam",
-      "name_ko": "키오스크 내려치기",
-      "category": "property_damage"
+    "A001": {
+      "label": "kiosk_tap",
+      "name_ko": "키오스크 두드리기",
+      "category": "property_damage",
+      "repo_action_id": "A01"
     },
-    "A02": {
-      "label": "one_arm_throw",
-      "name_ko": "한 팔로 물건 던지기",
-      "category": "property_damage"
+    "A002": {
+      "label": "throw_one_hand",
+      "name_ko": "한손 물건 던지기",
+      "category": "property_damage",
+      "repo_action_id": "A02"
     },
-    "A03": {
-      "label": "freezer_front_kick",
-      "name_ko": "냉동고 앞차기",
-      "category": "property_damage"
+    "A003": {
+      "label": "front_kick",
+      "name_ko": "앞차기",
+      "category": "property_damage",
+      "repo_action_id": "A03"
     },
-    "A04": {
-      "label": "claw_machine_shake",
-      "name_ko": "뽑기 기계 흔들기",
-      "category": "property_damage"
+    "A004": {
+      "label": "grab_shake",
+      "name_ko": "잡고 흔들기",
+      "category": "property_damage",
+      "repo_action_id": "A04"
     },
-    "A05": {
-      "label": "two_hand_shove",
-      "name_ko": "양손으로 밀치기",
-      "category": "violence"
+    "A005": {
+      "label": "push",
+      "name_ko": "밀치기",
+      "category": "violence",
+      "repo_action_id": "A05"
     },
-    "A06": {
-      "label": "two_hand_weapon_swing",
-      "name_ko": "도구 들고 양손 휘두르기",
-      "category": "violence"
+    "A006": {
+      "label": "swing",
+      "name_ko": "휘두르기",
+      "category": "violence",
+      "repo_action_id": "A06"
     },
-    "A07": {
-      "label": "sit_on_floor_mat",
-      "name_ko": "바닥 매트에 주저앉기",
-      "category": "loitering"
+    "A007": {
+      "label": "sit_floor",
+      "name_ko": "바닥에 앉기",
+      "category": "loitering",
+      "repo_action_id": "A07"
     },
-    "A08": {
-      "label": "jump_onto_chair_phone",
-      "name_ko": "의자에 뛰어올라 앉아 휴대폰 보기",
-      "category": "loitering"
+    "A008": {
+      "label": "sit_on_object",
+      "name_ko": "위에 앉기",
+      "category": "loitering",
+      "repo_action_id": "A08"
     },
-    "A09": {
-      "label": "lie_prone_phone",
-      "name_ko": "엎드려 휴대폰 보기",
-      "category": "loitering"
+    "A009": {
+      "label": "lie_forward",
+      "name_ko": "앞으로 눕기",
+      "category": "loitering",
+      "repo_action_id": "A09"
     },
-    "A10": {
-      "label": "lie_supine_roll_side",
-      "name_ko": "누워서 휴대폰 보다 옆으로 돌아눕기",
-      "category": "loitering"
+    "A010": {
+      "label": "lie_backward",
+      "name_ko": "뒤로 눕기",
+      "category": "loitering",
+      "repo_action_id": "A10"
     },
-    "A11": {
-      "label": "body_check",
+    "A011": {
+      "label": "body_slam",
       "name_ko": "몸통 박치기",
-      "category": "violence"
+      "category": "violence",
+      "repo_action_id": "A11"
     },
-    "A12": {
-      "label": "kneel_grab_prize",
-      "name_ko": "무릎 꿇고 뽑기 인형 꺼내기",
-      "category": "theft_suspect"
+    "A012": {
+      "label": "crouch_take_item",
+      "name_ko": "쪼그려 물건 빼내기",
+      "category": "theft_suspect",
+      "repo_action_id": "A12"
     },
-    "A13": {
-      "label": "table_slam",
-      "name_ko": "테이블 내려치기",
-      "category": "property_damage"
+    "A013": {
+      "label": "shotgun",
+      "name_ko": "샷건",
+      "category": "property_damage",
+      "repo_action_id": "A13"
     },
-    "A14": {
-      "label": "repeated_vomiting",
-      "name_ko": "연속 구토하기",
-      "category": "emergency"
+    "A014": {
+      "label": "vomit",
+      "name_ko": "구토",
+      "category": "emergency",
+      "repo_action_id": "A14"
     },
-    "A15": {
-      "label": "sleep_against_wall",
-      "name_ko": "벽에 기대어 잠들기",
-      "category": "emergency"
+    "A015": {
+      "label": "fall_sideways",
+      "name_ko": "옆으로 쓰러지기",
+      "category": "emergency",
+      "repo_action_id": "A15"
     },
-    "A16": {
-      "label": "faint_backward",
-      "name_ko": "뒤로 기절하기",
-      "category": "emergency"
+    "A016": {
+      "label": "fall_backward",
+      "name_ko": "뒤로 넘어지기",
+      "category": "emergency",
+      "repo_action_id": "A16"
     },
-    "A17": {
-      "label": "trip_fall_forward",
-      "name_ko": "걸려 넘어지기 (앞으로)",
-      "category": "emergency"
+    "A017": {
+      "label": "fall_forward",
+      "name_ko": "앞으로 넘어지기",
+      "category": "emergency",
+      "repo_action_id": "A17"
     }
   },
+  "class_ids": "unified",
   "model_params": {
     "class_weight": "balanced",
     "max_depth": null,
@@ -182,7 +200,7 @@
     "median": 5.35,
     "max": 26.81
   },
-  "trained_on": "S01~S05 (255 clips, 17 actions x 3 views x 5 people)",
+  "trained_on": "S01, S02, S03, S04, S05 (255 clips, 17 actions x 3 views x 5 people)",
   "views": [
     "front",
     "side",
@@ -208,5 +226,5 @@
     }
   },
   "sklearn_version": "1.9.1",
-  "created_at": "2026-11-24T09:48:37"
+  "created_at": "2026-11-24T12:14:17"
 }
