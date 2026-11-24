@@ -12,13 +12,16 @@ from .models import AnalysisJob, PersonPrediction
 from .services import InferenceError, predict_video
 
 log = logging.getLogger(__name__)
+CAPTURING = "카메라 녹화 중"            # analyses.js 가 이 문구를 보고 '지금 동작하세요'를 띄운다
+ANALYZING = "녹화 끝, AI 분석 중"
 
 
 def _fail(job: AnalysisJob, message: str) -> None:
     job.status = AnalysisJob.Status.FAILURE
     job.error_message = message
+    job.result_message = ""                      # '녹화 중' 같은 단계 안내가 남지 않게
     job.finished_at = timezone.now()
-    job.save(update_fields=["status", "error_message", "finished_at"])
+    job.save(update_fields=["status", "error_message", "result_message", "finished_at"])
 
 
 @shared_task(bind=True)
@@ -32,11 +35,16 @@ def run_analysis(self, job_id: int) -> str:
     job.save(update_fields=["status", "started_at"])
 
     try:
-        if job.input_type == AnalysisJob.InputType.IPWEBCAM:
+        # 실시간 장면 저장·자동 감지는 영상을 이미 들고 오므로 수집을 건너뛴다
+        if job.input_type == AnalysisJob.InputType.IPWEBCAM and not job.video:
+            # 화면이 '지금 녹화 중'을 알 수 있게 단계 안내를 남긴다 (대기열에서 기다린 만큼 버튼보다 늦게 시작할 수 있음)
+            job.result_message = CAPTURING
+            job.save(update_fields=["result_message"])
             rel = Path("videos") / "ipwebcam" / f"job{job.pk}_{timezone.now():%Y%m%d_%H%M%S}.mp4"
             capture_clip(job.camera_name, Path(settings.MEDIA_ROOT) / rel)
             job.video.name = str(rel)
-            job.save(update_fields=["video"])
+            job.result_message = ANALYZING
+            job.save(update_fields=["video", "result_message"])
         result = predict_video(job.video.path)
     except (CaptureError, InferenceError) as exc:
         _fail(job, str(exc))

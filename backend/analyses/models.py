@@ -12,6 +12,10 @@ class Camera(models.Model):
     url = models.CharField("영상 주소", max_length=200, validators=[validate_camera_url],
                            help_text="IP Webcam 앱 화면의 주소. 예: 192.168.0.10:8080 → http://192.168.0.10:8080/video")
     enabled = models.BooleanField("사용", default=True)
+    # 휴대폰을 세로로 들어도 IP Webcam 은 가로 영상을 보낸다. 사람이 누워 보이면 모델이 눕기 동작으로 답하므로
+    # 실시간 보기·8초 수집·장면 저장 모두 이 값만큼 돌린 뒤 분석한다
+    rotation = models.PositiveSmallIntegerField("화면 회전", default=0,
+                                                choices=[(0, "0°"), (90, "시계 90°"), (180, "180°"), (270, "반시계 90°")])
     updated_at = models.DateTimeField("수정 시각", auto_now=True)
 
     class Meta:
@@ -39,12 +43,21 @@ class AnalysisJob(models.Model):
         SUCCESS = "SUCCESS", "완료"
         FAILURE = "FAILURE", "실패"
 
+    class Source(models.TextChoices):
+        """IP Webcam 영상을 어떻게 잡았나. 자동 감지는 Confidence 가 높을 때만 저장되므로 정확도 근거로 섞지 않게 따로 표시"""
+        CAPTURE = "CAPTURE", "8초 수집"
+        LIVE = "LIVE", "실시간 장면 저장"
+        LIVE_AUTO = "LIVE_AUTO", "자동 감지"
+
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="analysis_jobs")
     title = models.CharField("제목", max_length=100, blank=True)
     memo = models.TextField("메모", blank=True)
     input_type = models.CharField("입력 방식", max_length=10, choices=InputType.choices)
     video = models.FileField("영상", upload_to="videos/%Y/%m/%d/", blank=True)
     camera_name = models.CharField("카메라", max_length=50, blank=True)
+    source = models.CharField("영상 확보 방법", max_length=10, choices=Source.choices, blank=True, db_index=True)
+    # 장면을 저장할 때 실시간 화면이 보여 준 예측 (저장 영상 분석 결과와 비교용)
+    live_snapshot = models.JSONField("저장 당시 실시간 예측", default=list, blank=True)
     # 사용자가 '이 동작을 했다'고 고른 값. 검증된 정답이 아니다
     expected_action = models.CharField("예상 동작(사용자 선택)", max_length=3, choices=ACTION_CHOICES, blank=True)
     status = models.CharField("상태", max_length=10, choices=Status.choices, default=Status.PENDING, db_index=True)

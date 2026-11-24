@@ -5,8 +5,8 @@ from .models import AnalysisJob, Camera, PersonPrediction
 
 @admin.register(Camera)
 class CameraAdmin(admin.ModelAdmin):
-    list_display = ["name", "url", "enabled", "updated_at"]
-    list_editable = ["url", "enabled"]
+    list_display = ["name", "url", "rotation", "enabled", "updated_at"]
+    list_editable = ["url", "rotation", "enabled"]
     search_fields = ["name", "url"]
 
 
@@ -21,11 +21,11 @@ class PersonPredictionInline(admin.TabularInline):
 
 @admin.register(AnalysisJob)
 class AnalysisJobAdmin(admin.ModelAdmin):
-    list_display = ["id", "user", "input_type", "status", "expected_action", "prediction_summary",
+    list_display = ["id", "user", "input_type", "source", "status", "expected_action", "prediction_summary",
                     "processing_seconds", "created_at"]
-    list_filter = ["status", "input_type", "expected_action", "created_at"]
+    list_filter = ["status", "input_type", "source", "expected_action", "created_at"]
     search_fields = ["user__username", "title", "memo", "celery_task_id"]
-    readonly_fields = ["celery_task_id", "status", "error_message", "result_message", "video_seconds",
+    readonly_fields = ["celery_task_id", "source", "live_snapshot", "status", "error_message", "result_message", "video_seconds",
                        "processing_seconds", "created_at", "started_at", "finished_at"]
     inlines = [PersonPredictionInline]
     date_hierarchy = "created_at"

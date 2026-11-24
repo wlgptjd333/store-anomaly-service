@@ -11,11 +11,19 @@ from .models import AnalysisJob, Camera, PersonPrediction
 from .services import health
 
 
+def _live_config():
+    return {"min_confidence": settings.LIVE_AUTO_MIN_CONFIDENCE, "min_seconds": settings.LIVE_AUTO_MIN_SECONDS,
+            "cooldown_seconds": settings.LIVE_AUTO_COOLDOWN_SECONDS, "clip_seconds": settings.LIVE_CLIP_SECONDS,
+            "capture_seconds": settings.CAPTURE_SECONDS}
+
+
 def _page_context():
     return {
         "actions": ACTIONS,
         "cameras": list(Camera.objects.filter(enabled=True).values_list("name", flat=True)),  # 이름만
         "camera_networks": allowed_networks_text(),
+        "live_auto": _live_config(),
+        "live_config": _live_config(),          # analyses.js 가 읽는 같은 값 (json_script)
         "capture_seconds": settings.CAPTURE_SECONDS,
         "uncertain_below": settings.UNCERTAIN_BELOW,
         "max_upload_mb": settings.MAX_UPLOAD_MB,

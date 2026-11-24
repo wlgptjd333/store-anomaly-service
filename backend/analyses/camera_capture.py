@@ -14,16 +14,21 @@ class CaptureError(Exception):
     pass
 
 
-def camera_url(camera_name: str) -> str | None:
-    from .models import Camera
-    cam = Camera.objects.filter(name=camera_name, enabled=True).first()
-    return cam.url if cam else None
+ROTATE = {90: cv2.ROTATE_90_CLOCKWISE, 180: cv2.ROTATE_180, 270: cv2.ROTATE_90_COUNTERCLOCKWISE}
+
+
+def rotate(frame, degrees: int):
+    """카메라 표의 회전값만큼 돌린다 (실시간 보기와 같은 규칙: ai_service/services/live_session.py)"""
+    code = ROTATE.get(degrees)
+    return cv2.rotate(frame, code) if code is not None else frame
 
 
 def capture_clip(camera_name: str, out_path: Path, seconds: float | None = None) -> dict:
-    url = camera_url(camera_name)
-    if not url:
+    from .models import Camera
+    cam = Camera.objects.filter(name=camera_name, enabled=True).first()
+    if cam is None:
         raise CaptureError(f"허용되지 않은 카메라입니다: {camera_name}")
+    url, degrees = cam.url, cam.rotation
     seconds = seconds or settings.CAPTURE_SECONDS
     cap = cv2.VideoCapture(url)
     cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, settings.CAPTURE_CONNECT_TIMEOUT_SECONDS * 1000)
@@ -36,6 +41,7 @@ def capture_clip(camera_name: str, out_path: Path, seconds: float | None = None)
         raise CaptureError(f"카메라 '{camera_name}'에서 화면을 받지 못했습니다.")
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
+    frame = rotate(frame, degrees)
     h, w = frame.shape[:2]
     frames, misses = [frame], 0
     start = time.monotonic()
@@ -46,7 +52,7 @@ def capture_clip(camera_name: str, out_path: Path, seconds: float | None = None)
             if misses > 30:
                 break
             continue
-        frames.append(frame)
+        frames.append(rotate(frame, degrees))
     cap.release()
     elapsed = time.monotonic() - start
     if elapsed < seconds * 0.5 or len(frames) < 10:

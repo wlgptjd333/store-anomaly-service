@@ -241,7 +241,7 @@ class CameraTests(TestCase):
         self.api.force_authenticate(self.staff)
         r = self.api.post(f"/api/cameras/{self.cam.id}/check/")
         self.assertEqual((r.status_code, r.data["width"]), (200, 640))
-        probe.assert_called_once_with("http://192.168.0.10:8080/video")
+        probe.assert_called_once_with("http://192.168.0.10:8080/video", 0)
 
     def test_disabled_camera_cannot_be_analyzed(self):
         self.api.force_authenticate(self.user)
@@ -256,7 +256,7 @@ class LiveTests(TestCase):
 
     def setUp(self):
         self.user = User.objects.create_user("normal", password="pw-normal-123")
-        Camera.objects.create(name="phone", url="http://192.168.0.10:8080/video")
+        Camera.objects.create(name="phone", url="http://192.168.0.10:8080/video", rotation=90)
         self.api = APIClient()
         self.api.force_authenticate(self.user)
 
@@ -271,7 +271,8 @@ class LiveTests(TestCase):
                         return_value=self.fake_response(200, {"session_id": self.SID, "state": "connecting"})) as req:
             r = self.api.post("/api/live/", {"camera_name": "phone"}, format="json")
         self.assertEqual((r.status_code, r.data["session_id"]), (201, self.SID))
-        self.assertEqual(req.call_args.kwargs["json"], {"camera": "phone", "url": "http://192.168.0.10:8080/video"})
+        self.assertEqual(req.call_args.kwargs["json"],
+                         {"camera": "phone", "url": "http://192.168.0.10:8080/video", "rotation": 90})
         with mock.patch("analyses.services.requests.request") as req:
             r = self.api.post("/api/live/", {"camera_name": "http://evil.example/"}, format="json")
         self.assertEqual(r.status_code, 400)
@@ -291,3 +292,92 @@ class LiveTests(TestCase):
     def test_stream_requires_login(self):
         self.assertEqual(self.client.get(f"/live/{self.SID}/stream/").status_code, 302)
         self.assertEqual(APIClient().post("/api/live/", {"camera_name": "phone"}).status_code, 403)
+
+
+@override_settings(MEDIA_ROOT=TMP_MEDIA, LIVE_AUTO_MIN_CONFIDENCE=0.5, LIVE_AUTO_MIN_SECONDS=3,
+                   LIVE_AUTO_COOLDOWN_SECONDS=15)
+class LiveSaveTests(TestCase):
+    """이 장면 저장·자동 감지: 실시간이 본 최근 8초를 저장 → 같은 Celery·FastAPI 분석으로 기록."""
+
+    SID = "0f8e6a52-3b1c-4c55-9a2f-2b8f4f7d1a10"
+
+    def setUp(self):
+        self.user = User.objects.create_user("normal", password="pw-normal-123")
+        Camera.objects.create(name="phone", url="http://192.168.0.10:8080/video")
+        self.api = APIClient()
+        self.api.force_authenticate(self.user)
+
+    def state(self, conf=0.62, streak=4.0, streak_min=0.55, running=True):
+        person = {"track_id": 3, "status": "ok", "action_id": "A03", "action_name_ko": "냉동고 앞차기",
+                  "confidence": conf, "uncertain": conf < 0.3, "streak_seconds": streak,
+                  "streak_min_confidence": streak_min}
+        return {"camera": "phone", "state": "running" if running else "stopped", "people": [person]}
+
+    def save(self, body, state):
+        with mock.patch("analyses.live_views.services.live_state", return_value=state), \
+                mock.patch("analyses.live_views.services.live_clip", return_value=b"\x00\x00\x00\x18ftypmp42clip") as clip, \
+                mock.patch("analyses.tasks.predict_video", return_value=fake_result(1)) as pv, \
+                mock.patch("analyses.tasks.capture_clip") as cap, \
+                mock.patch("analyses.views.run_analysis.apply_async",
+                           side_effect=lambda args, task_id: run_analysis(*args)):
+            with self.captureOnCommitCallbacks(execute=True):
+                r = self.api.post(f"/api/live/{self.SID}/save/", body, format="json")
+        return r, clip, pv, cap
+
+    def test_manual_save_uses_live_clip_not_new_capture(self):
+        r, clip, pv, cap = self.save({"expected_action": "A03", "title": "정면"}, self.state(conf=0.2, streak=0))
+        self.assertEqual(r.status_code, 202)
+        job = AnalysisJob.objects.get(pk=r.data["id"])
+        self.assertEqual((job.input_type, job.source, job.status, job.expected_action, job.title),
+                         ("IPWEBCAM", "LIVE", "SUCCESS", "A03", "정면"))
+        self.assertTrue(job.video.name.endswith(".mp4"))
+        self.assertEqual(job.live_snapshot[0]["action_id"], "A03")
+        cap.assert_not_called()                        # 이미 들고 온 영상 → 다시 녹화하지 않음
+        pv.assert_called_once()
+        clip.assert_called_once_with(self.SID, 8.0)
+
+    def test_auto_save_needs_lasting_confident_action(self):
+        r, clip, *_ = self.save({"auto": True}, self.state(streak=2.0))             # 아직 2초
+        self.assertEqual(r.status_code, 409)
+        r, clip, *_ = self.save({"auto": True}, self.state(streak_min=0.45))        # 중간에 기준 아래로
+        self.assertEqual(r.status_code, 409)
+        clip.assert_not_called()
+        r, *_ = self.save({"auto": True, "min_confidence": 0.1}, self.state(streak_min=0.29))  # 기준은 30% 아래로 못 내림
+        self.assertEqual(r.status_code, 409)
+        r, *_ = self.save({"auto": True}, self.state())
+        self.assertEqual(r.status_code, 202)
+        job = AnalysisJob.objects.get(pk=r.data["id"])
+        self.assertEqual(job.source, "LIVE_AUTO")
+        self.assertIn("자동 감지 A03", job.title)
+
+    def test_auto_save_cooldown_and_stopped_session(self):
+        self.assertEqual(self.save({"auto": True}, self.state())[0].status_code, 202)
+        self.assertEqual(self.save({"auto": True}, self.state())[0].status_code, 429)   # 15초 안에 또
+        self.assertEqual(self.save({}, self.state())[0].status_code, 202)               # 직접 저장은 간격 없음
+        self.assertEqual(self.save({}, self.state(running=False))[0].status_code, 409)
+        self.assertEqual(self.save({"expected_action": "Z99"}, self.state())[0].status_code, 400)
+
+    def test_capture_job_marks_source_and_recording_step(self):
+        seen = []
+
+        def fake_capture(name, path, seconds=None):
+            seen.append(AnalysisJob.objects.get(camera_name=name).result_message)   # 녹화 중 안내가 먼저 저장됨
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b"\x00\x00\x00\x18ftypmp42cap")
+        with mock.patch("analyses.tasks.capture_clip", side_effect=fake_capture), \
+                mock.patch("analyses.tasks.predict_video", return_value=fake_result(1)), \
+                mock.patch("analyses.views.run_analysis.apply_async",
+                           side_effect=lambda args, task_id: run_analysis(*args)):
+            with self.captureOnCommitCallbacks(execute=True):
+                r = self.api.post("/api/analyses/", {"input_type": "IPWEBCAM", "camera_name": "phone"}, format="multipart")
+        job = AnalysisJob.objects.get(pk=r.data["id"])
+        self.assertEqual((job.source, job.status), ("CAPTURE", "SUCCESS"))
+        self.assertEqual(seen, ["카메라 녹화 중"])
+
+    def test_staff_sets_rotation(self):
+        staff = User.objects.create_user("boss", password="pw-boss-123", is_staff=True)
+        self.api.force_authenticate(staff)
+        cam = Camera.objects.get(name="phone")
+        r = self.api.patch(f"/api/cameras/{cam.id}/", {"rotation": 90}, format="json")
+        self.assertEqual((r.status_code, r.data["rotation"]), (200, 90))
+        self.assertEqual(self.api.patch(f"/api/cameras/{cam.id}/", {"rotation": 45}, format="json").status_code, 400)

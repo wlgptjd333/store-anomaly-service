@@ -48,7 +48,7 @@ def validate_camera_url(url: str) -> None:
         raise ValidationError(f"같은 와이파이(내부망) 주소만 쓸 수 있습니다. 허용 범위: {allowed_networks_text()}")
 
 
-def probe(url: str) -> dict:
+def probe(url: str, rotation: int = 0) -> dict:
     """연결 확인: 접속해서 Frame 하나를 받아 본다 (관리자 '연결 확인' 버튼)."""
     import cv2
     t0 = time.monotonic()
@@ -62,6 +62,8 @@ def probe(url: str) -> dict:
         if not ok:
             return {"ok": False, "message": "연결은 됐지만 화면을 받지 못했습니다. 주소 끝이 /video 인지 확인하세요."}
         h, w = frame.shape[:2]
+        if rotation in (90, 270):
+            w, h = h, w
         return {"ok": True, "width": w, "height": h, "seconds": round(time.monotonic() - t0, 2),
                 "message": f"연결됨 · {w}×{h}"}
     finally:

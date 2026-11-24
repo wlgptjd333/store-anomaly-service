@@ -32,13 +32,15 @@ class AnalysisJobSerializer(serializers.ModelSerializer):
     input_type_display = serializers.CharField(source="get_input_type_display", read_only=True)
     status_display = serializers.CharField(source="get_status_display", read_only=True)
     expected_action_display = serializers.CharField(source="get_expected_action_display", read_only=True)
+    source_display = serializers.CharField(source="get_source_display", read_only=True)
     video_name = serializers.SerializerMethodField()
     predictions = PersonPredictionSerializer(many=True, read_only=True)
     is_finished = serializers.BooleanField(read_only=True)
 
     class Meta:
         model = AnalysisJob
-        fields = ["id", "title", "memo", "input_type", "input_type_display", "video_name", "camera_name",
+        fields = ["id", "title", "memo", "input_type", "input_type_display", "source", "source_display",
+                  "live_snapshot", "video_name", "camera_name",
                   "expected_action", "expected_action_display", "status", "status_display", "is_finished",
                   "celery_task_id", "error_message", "result_message", "video_seconds", "processing_seconds",
                   "created_at", "started_at", "finished_at", "predictions"]
@@ -75,6 +77,7 @@ class AnalysisJobCreateSerializer(serializers.ModelSerializer):
                 allowed = ", ".join(enabled) or "없음 (관리자가 카메라를 등록해야 합니다)"
                 raise serializers.ValidationError({"camera_name": f"허용된 카메라만 쓸 수 있습니다. 허용 목록: {allowed}"})
             attrs.pop("video", None)
+            attrs["source"] = AnalysisJob.Source.CAPTURE
         return attrs
 
 
@@ -93,7 +96,7 @@ class CameraSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Camera
-        fields = ["id", "name", "url", "enabled", "updated_at"]
+        fields = ["id", "name", "url", "rotation", "enabled", "updated_at"]
         read_only_fields = ["updated_at"]
 
     def validate_url(self, value):

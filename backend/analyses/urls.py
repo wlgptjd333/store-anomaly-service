@@ -16,6 +16,7 @@ urlpatterns = [
     path("dashboard/", page_views.dashboard, name="dashboard"),
     path("api/live/", live_views.live_start, name="live-start"),
     path("api/live/<uuid:sid>/", live_views.live_session, name="live-session"),
+    path("api/live/<uuid:sid>/save/", live_views.live_save, name="live-save"),
     path("live/<uuid:sid>/stream/", live_views.live_stream, name="live-stream"),
     path("api/", include(router.urls)),
 ]

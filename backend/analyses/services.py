@@ -51,8 +51,13 @@ def _live(method: str, path: str, **kw):
     return resp
 
 
-def live_start(camera: str, url: str) -> dict:
-    return _live("POST", "/start", json={"camera": camera, "url": url}).json()
+def live_start(camera: str, url: str, rotation: int = 0) -> dict:
+    return _live("POST", "/start", json={"camera": camera, "url": url, "rotation": rotation}).json()
+
+
+def live_clip(sid: str, seconds: float) -> bytes:
+    """실시간 화면이 본 최근 seconds 초 원본(회전 후) MP4"""
+    return _live("GET", f"/{sid}/clip", params={"seconds": seconds}, timeout=30).content
 
 
 def live_state(sid: str) -> dict:

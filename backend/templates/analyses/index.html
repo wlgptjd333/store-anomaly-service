@@ -22,8 +22,9 @@
         <select name="camera_name" id="camera-select">{% for c in cameras %}<option value="{{ c }}">{{ c }}</option>{% endfor %}</select>
       </label>
       <p id="no-camera" class="error" {% if cameras %}hidden{% endif %}>허용된 카메라가 없습니다. 관리자가 아래 '카메라 주소 관리'에서 등록해야 합니다.</p>
-      <p class="muted">'AI 분석 시작'을 누르면 서버가 카메라에서 {{ capture_seconds|floatformat:0 }}초 동안 화면을 받아 분석하고 기록을 남깁니다. 그동안 카메라 앞에서 동작하세요.
-        아래 '실시간 보기'로 화면과 Skeleton 을 먼저 확인할 수 있습니다.</p>
+      <p class="muted">'AI 분석 시작'을 누르면 서버가 카메라에서 {{ capture_seconds|floatformat:0 }}초 동안 화면을 받아 분석하고 기록을 남깁니다.
+        앞 작업이 있으면 녹화가 늦게 시작하니, 아래 상태가 <strong>'지금 녹화 중'</strong>으로 바뀐 뒤 동작하세요.
+        <br>추천: 아래 <strong>실시간 보기</strong>로 Skeleton 이 똑바로 잡히는지 보면서 동작하고 <strong>'이 장면 저장'</strong>을 누르면, 화면에 보이던 최근 {{ live_auto.clip_seconds|floatformat:0 }}초가 그대로 기록됩니다.</p>
     </div>
 
     <div class="row">
@@ -46,7 +47,7 @@
     <button id="live-btn" type="button" class="primary">실시간 보기 시작</button>
   </div>
   <p class="muted small">선택한 카메라 화면에 사람별 Skeleton 과 <strong>최근 8초</strong> 기준 예측을 겹쳐 보여 줍니다 (1초마다 갱신).
-    보기용이라 기록은 남지 않습니다. 화면을 닫으면 20초 뒤 서버도 멈춥니다.</p>
+    사람이 옆으로 누워 보이면 관리자가 카메라 '화면 회전'을 맞춰야 합니다 — 돌아간 화면은 눕기 동작으로 잘못 나옵니다. 화면을 닫으면 20초 뒤 서버도 멈춥니다.</p>
   <p id="live-message" class="error" hidden></p>
   <div class="live-grid" id="live-body" hidden>
     <div class="live-frame"><img id="live-img" alt="실시간 카메라 화면 — 사람별 Skeleton 과 Track ID·예측 동작 번호 표시"></div>
@@ -56,6 +57,22 @@
         <tbody><tr><td colspan="3" class="muted">화면에 사람이 보이면 여기에 나옵니다.</td></tr></tbody>
       </table>
       <p class="muted small" id="live-meta"></p>
+
+      <div class="live-save">
+        <button id="live-save-btn" type="button" class="primary">이 장면 저장 (최근 {{ live_auto.clip_seconds|floatformat:0 }}초)</button>
+        <p class="muted small">지금 화면에 보이던 구간을 그대로 저장하고, 업로드와 같은 방법으로 다시 분석해 기록합니다.
+          위 '수행한 동작'·'제목'을 함께 저장합니다.</p>
+        <label class="inline-check"><input type="checkbox" id="live-auto"> 자동 감지 기록</label>
+        <label class="inline-select">기준
+          <select id="live-auto-threshold">
+            <option value="0.4">40%</option><option value="0.5" selected>50%</option><option value="0.6">60%</option><option value="0.7">70%</option>
+          </select>
+        </label>
+        <p class="muted small">같은 동작이 {{ live_auto.min_seconds|floatformat:0 }}초 이상, 그동안 Confidence 가 기준 이상으로 이어지면 그 장면을 저장합니다
+          (저장 사이 {{ live_auto.cooldown_seconds|floatformat:0 }}초 간격). 기록에는 <span class="badge">자동 감지</span>로 따로 표시됩니다 —
+          Confidence 가 높을 때만 골라 저장한 것이라 정확도 근거로 쓰면 안 됩니다.</p>
+        <p id="live-save-message" class="small" hidden></p>
+      </div>
     </div>
   </div>
 </section>
@@ -65,13 +82,16 @@
   <h2>카메라 주소 관리 <span class="badge">관리자</span></h2>
   <p class="muted small">휴대폰 IP Webcam 앱에서 '서버 시작'을 누르면 화면 아래에 나오는 주소(예: <code>192.168.0.10:8080</code>)를 그대로 적으면 됩니다.
     와이파이를 다시 잡으면 휴대폰 IP 가 바뀔 수 있으니 연결이 안 되면 여기부터 확인하세요.
-    보안을 위해 같은 내부망 주소만 저장됩니다 (허용 범위: {{ camera_networks }}). 일반 사용자는 카메라 이름만 고릅니다.</p>
+    보안을 위해 같은 내부망 주소만 저장됩니다 (허용 범위: {{ camera_networks }}). 일반 사용자는 카메라 이름만 고릅니다.
+    <br><strong>화면 회전</strong>: 휴대폰을 세로로 들어도 IP Webcam 은 가로로 보냅니다. 실시간 보기에서 사람이 옆으로 누워 보이면 회전을 바꾸고 저장한 뒤 실시간 보기를 다시 시작하세요
+    (8초 수집·장면 저장에도 같이 적용).</p>
   <table class="table" id="camera-table">
-    <thead><tr><th>이름</th><th>주소</th><th>사용</th><th></th></tr></thead>
-    <tbody><tr><td colspan="4" class="muted">불러오는 중…</td></tr></tbody>
+    <thead><tr><th>이름</th><th>주소</th><th>화면 회전</th><th>사용</th><th></th></tr></thead>
+    <tbody><tr><td colspan="5" class="muted">불러오는 중…</td></tr></tbody>
     <tfoot><tr>
       <td><input type="text" id="new-camera-name" placeholder="예: phone2" maxlength="50"></td>
       <td><input type="text" id="new-camera-url" placeholder="예: 192.168.0.10:8080" maxlength="200"></td>
+      <td></td>
       <td></td>
       <td><button type="button" class="primary small-btn" id="camera-add">추가</button></td>
     </tr></tfoot>
@@ -98,6 +118,7 @@
 </section>
 
 {{ uncertain_below|json_script:"uncertain-below" }}
+{{ live_config|json_script:"live-config" }}
 {% endblock %}
 {% block scripts %}
 <script src="https://cdn.jsdelivr.net/npm/axios@1.7.7/dist/axios.min.js"></script>

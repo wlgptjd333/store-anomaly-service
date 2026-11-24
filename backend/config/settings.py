@@ -141,6 +141,13 @@ IPWEBCAM_CAMERAS = dict(item.split("=", 1) for item in env_list("IPWEBCAM_CAMERA
 CAMERA_ALLOWED_NETWORKS = [ipaddress.ip_network(n, strict=False)
                            for n in env_list("CAMERA_ALLOWED_NETWORKS", "192.168.0.0/16,10.0.0.0/8")]
 CAPTURE_SECONDS = float(os.environ.get("CAPTURE_SECONDS", "8"))
+# 실시간 보기 → '이 장면 저장'·자동 감지: 실시간 예측이 보는 구간(최근 8초)과 같은 길이를 저장
+LIVE_CLIP_SECONDS = float(os.environ.get("LIVE_CLIP_SECONDS", "8"))
+# 자동 감지: 같은 동작이 LIVE_AUTO_MIN_SECONDS 이상, 그동안 Confidence 가 기준 이상으로 이어지면 저장.
+# 한 순간 튄 값으로 저장하지 않게 '이어짐'을 보고, 같은 장면이 겹쳐 쌓이지 않게 저장 사이 간격을 둔다
+LIVE_AUTO_MIN_CONFIDENCE = float(os.environ.get("LIVE_AUTO_MIN_CONFIDENCE", "0.5"))
+LIVE_AUTO_MIN_SECONDS = float(os.environ.get("LIVE_AUTO_MIN_SECONDS", "3"))
+LIVE_AUTO_COOLDOWN_SECONDS = float(os.environ.get("LIVE_AUTO_COOLDOWN_SECONDS", "15"))
 CAPTURE_CONNECT_TIMEOUT_SECONDS = float(os.environ.get("CAPTURE_CONNECT_TIMEOUT_SECONDS", "10"))
 
 LOGGING = {

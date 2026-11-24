@@ -58,11 +58,24 @@ class _Track:
                          keypoint_conf=list(self.keypoint_conf))
 
 
+ROTATE = {90: cv2.ROTATE_90_CLOCKWISE, 180: cv2.ROTATE_180, 270: cv2.ROTATE_90_COUNTERCLOCKWISE}
+
+
+def rotate(frame: np.ndarray, degrees: int) -> np.ndarray:
+    """휴대폰을 세로로 들어도 IP Webcam 은 가로 영상을 보낸다 → 사람이 누운 것처럼 보이면 모델이 눕기 동작으로 답한다."""
+    code = ROTATE.get(degrees)
+    return cv2.rotate(frame, code) if code is not None else frame
+
+
 class LiveSession:
-    def __init__(self, camera: str, url: str, bundle, device):
+    def __init__(self, camera: str, url: str, bundle, device, rotation: int = 0):
         from ultralytics import YOLO
         self.id = str(uuid.uuid4())
-        self.camera, self.url = camera, url
+        self.camera, self.url, self.rotation = camera, url, rotation
+        # '이 장면 저장'용: 최근 몇 초의 원본 Frame(회전 후, Skeleton 없음)을 JPEG 로 들고 있는다
+        self._clip: list[tuple[float, bytes]] = []
+        self._clip_lock = threading.Lock()
+        self._reset = False
         self.bundle, self.cfg, self.device = bundle, bundle.config, device
         self.pose = YOLO(str(APP_ROOT / bundle.config["pose_model"]))
         self.state, self.message = "connecting", ""
@@ -105,11 +118,10 @@ class LiveSession:
 
     def snapshot(self) -> dict:
         now = time.monotonic()
-        people = []
-        for tid in sorted(self.results):
-            r = self.results[tid]
-            people.append({"track_id": tid, **r})
-        return {"session_id": self.id, "camera": self.camera, "state": self.state, "message": self.message,
+        results = dict(self.results)                       # 처리 스레드가 바꾸는 중이어도 안전하게 복사
+        people = [{"track_id": tid, **results[tid]} for tid in sorted(results)]
+        return {"session_id": self.id, "camera": self.camera, "rotation": self.rotation,
+                "state": self.state, "message": self.message,
                 "fps": round(self.fps, 1), "width": self.frame_size[0], "height": self.frame_size[1],
                 "running_seconds": round(now - self.started, 1), "window_seconds": self.cfg["window_seconds"],
                 "uncertain_below": self.cfg["uncertain_below"], "people": people}
@@ -134,12 +146,58 @@ class LiveSession:
                     time.sleep(0.05)
                     continue
                 misses = 0
+                frame = rotate(frame, self.rotation)
+                t = time.monotonic()
                 with self._cond:
-                    self._raw = (time.monotonic(), frame)
+                    self._raw = (t, frame)
                     self._raw_seq += 1
                     self._cond.notify_all()
+                ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 90])
+                if ok:
+                    keep = self.cfg["live_clip_keep_seconds"]
+                    with self._clip_lock:
+                        self._clip.append((t, buf.tobytes()))
+                        while self._clip and self._clip[0][0] < t - keep:
+                            self._clip.pop(0)
         finally:
             cap.release()
+
+    def set_rotation(self, degrees: int) -> None:
+        """같은 카메라를 다른 회전으로 다시 열면: 쌓아 둔 사람·영상은 모양이 달라지므로 비운다."""
+        if degrees == self.rotation:
+            return
+        self.rotation = degrees
+        with self._clip_lock:
+            self._clip.clear()
+        self._reset = True                                 # 처리 스레드가 다음 Frame 전에 비운다 (동시 수정 방지)
+
+    def clip_mp4(self, seconds: float) -> tuple[bytes, float, int]:
+        """최근 seconds 초를 MP4 로. 실시간 예측이 본 구간(최근 8초)과 같은 영상 → 저장 결과가 화면과 맞는다."""
+        import os
+        import tempfile
+        with self._clip_lock:
+            if not self._clip:
+                return b"", 0.0, 0
+            end = self._clip[-1][0]
+            frames = [(t, b) for t, b in self._clip if t >= end - seconds]
+        span = frames[-1][0] - frames[0][0] if len(frames) > 1 else 0.0
+        if span < 1.0:
+            return b"", span, len(frames)
+        imgs = [cv2.imdecode(np.frombuffer(b, np.uint8), cv2.IMREAD_COLOR) for _, b in frames]
+        h, w = imgs[0].shape[:2]
+        fps = max(1.0, (len(imgs) - 1) / span)          # 휴대폰 스트림은 FPS 표시가 부정확해 실제 받은 수로
+        fd, path = tempfile.mkstemp(suffix=".mp4")
+        os.close(fd)
+        try:
+            wr = cv2.VideoWriter(path, cv2.VideoWriter_fourcc(*"mp4v"), fps, (w, h))
+            for img in imgs:
+                if img.shape[:2] == (h, w):                # 회전을 바꾼 직후 섞인 Frame 은 버림
+                    wr.write(img)
+            wr.release()
+            with open(path, "rb") as f:
+                return f.read(), span, len(imgs)
+        finally:
+            os.remove(path)
 
     # ── 처리 스레드 ──
     def _work(self) -> None:
@@ -159,6 +217,10 @@ class LiveSession:
                     continue
                 last_seq = self._raw_seq
                 t, frame = self._raw
+            if self._reset:
+                self.tracks.clear()
+                self.results.clear()
+                self._reset = False
             try:
                 people = self._pose(frame, t)
             except Exception as exc:                       # Pose 오류로 스레드가 조용히 죽지 않게
@@ -221,11 +283,19 @@ class LiveSession:
                 self.results[tid] = {"status": "collecting", "reason": r["reason"], "seen_seconds": seen,
                                      "track_seconds": r["track_seconds"]}
                 continue
+            # 같은 동작이 몇 초째 이어지는지 (자동 기록 조건: 순간 하나가 튄 것과 구분)
+            prev = self.results.get(tid) or {}
+            if prev.get("status") == "ok" and prev.get("action_id") == r["action_id"]:
+                streak = prev["streak_seconds"] + cfg["live_predict_every_seconds"]
+                streak_min = min(prev["streak_min_confidence"], r["confidence"])
+            else:
+                streak, streak_min = 0.0, r["confidence"]
             self.results[tid] = {"status": "ok", "seen_seconds": seen, "track_seconds": r["track_seconds"],
                                  "action_id": r["action_id"], "action_label": r["action_label"],
                                  "action_name_ko": r["action_name_ko"], "category": r["category"],
                                  "confidence": r["confidence"], "uncertain": r["uncertain"], "top3": r["top3"],
-                                 "valid_frames": r["valid_frames"]}
+                                 "valid_frames": r["valid_frames"], "streak_seconds": round(streak, 1),
+                                 "streak_min_confidence": round(streak_min, 4)}
 
     def _draw(self, frame: np.ndarray, people) -> None:
         kp_min = self.cfg["keypoint_confidence"]
@@ -282,16 +352,17 @@ class LiveManager:
         self._lock = threading.Lock()
         self._sessions: dict[str, LiveSession] = {}
 
-    def start(self, camera: str, url: str, bundle, device) -> LiveSession:
+    def start(self, camera: str, url: str, bundle, device, rotation: int = 0) -> LiveSession:
         with self._lock:
             for sid in [k for k, s in self._sessions.items() if not s.alive]:
                 del self._sessions[sid]
             for s in self._sessions.values():
                 if s.url == url:
                     s.touch()
+                    s.set_rotation(rotation)
                     return s
                 raise LiveBusy(f"카메라 '{s.camera}' 실시간 보기가 이미 실행 중입니다. 먼저 멈추세요.")
-            s = LiveSession(camera, url, bundle, device)
+            s = LiveSession(camera, url, bundle, device, rotation)
             self._sessions[s.id] = s
             return s
 

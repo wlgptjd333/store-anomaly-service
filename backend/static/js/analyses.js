@@ -11,6 +11,15 @@
     api: "/api/analyses/",
     pollMs: 2000,
     pollLimit: 450,                       // 2초 × 450 = 15분 (Celery 시간 제한과 같음)
+    capturing: "카메라 녹화 중",           // tasks.py CAPTURING 과 같은 문구
+    captureSeconds() {
+      const el = document.getElementById("live-config");
+      return el ? JSON.parse(el.textContent).capture_seconds : 8;
+    },
+    liveConfig() {
+      const el = document.getElementById("live-config");
+      return el ? JSON.parse(el.textContent) : { min_seconds: 3, cooldown_seconds: 15 };
+    },
     statusKo: { PENDING: "대기", STARTED: "처리 중", SUCCESS: "완료", FAILURE: "실패" },
   };
 
@@ -64,6 +73,7 @@
     liveStart: (camera_name) => http.post("/api/live/", { camera_name }).then((r) => r.data),
     liveState: (sid) => http.get(`/api/live/${sid}/`).then((r) => r.data),
     liveStop: (sid) => http.delete(`/api/live/${sid}/`),
+    liveSave: (sid, body) => http.post(`/api/live/${sid}/save/`, body).then((r) => r.data),
   };
 
   // ── View ──
@@ -115,7 +125,11 @@
       Util.$("#current").hidden = false;
       Util.$("#current-id").innerHTML = `#${job.id} ${View.badge(job.status)}`;
       View.steps(job.status);
-      const msg = { PENDING: "작업을 대기열에 넣었습니다.", STARTED: "AI 서버가 영상을 분석하고 있습니다…" }[job.status];
+      let msg = { PENDING: "작업을 대기열에 넣었습니다. 앞 작업이 끝나면 시작합니다.", STARTED: "AI 서버가 영상을 분석하고 있습니다…" }[job.status];
+      const recording = job.status === "STARTED" && job.result_message === Config.capturing;
+      if (job.status === "STARTED" && job.result_message) msg = job.result_message;
+      if (recording) msg = `● 지금 녹화 중 — 카메라 앞에서 동작하세요 (${Config.captureSeconds()}초)`;
+      Util.$("#current-message").className = recording ? "recording" : "muted";
       Util.$("#current-message").textContent = msg ?? (job.processing_seconds ? `AI 처리 ${Util.sec(job.processing_seconds)} · 영상 ${Util.sec(job.video_seconds)}` : "");
       Util.$("#current-result").innerHTML = job.predictions ? View.resultTable(job) + `<p><a href="/analyses/${job.id}/">상세 보기 →</a></p>` : "";
     },
@@ -124,7 +138,7 @@
       if (!body) return;
       body.innerHTML = jobs.length ? jobs.map((j) => `<tr>
           <td><a href="/analyses/${j.id}/">${j.id}</a></td>
-          <td class="nowrap">${Util.esc(j.input_type_display)}</td>
+          <td class="nowrap">${Util.esc(j.input_type_display)}${j.source_display ? `<br><span class="${j.source === "LIVE_AUTO" ? "badge" : "muted small"}">${Util.esc(j.source_display)}</span>` : ""}</td>
           <td>${j.expected_action ? Util.esc(j.expected_action_display) : "-"}</td>
           <td>${j.predictions.map(View.predictionLine).join("<br>") || (j.status === "FAILURE" ? `<span class="error">${Util.esc(j.error_message)}</span>` : Util.esc(j.result_message) || "-")}</td>
           <td>${View.badge(j.status)}</td>
@@ -135,7 +149,12 @@
     detail(job) {
       Util.$("#detail-status").outerHTML = `<span id="detail-status">${View.badge(job.status)}</span>`;
       const meta = [
-        ["입력 방식", job.input_type_display + (job.camera_name ? ` (${Util.esc(job.camera_name)})` : "")],
+        ["입력 방식", job.input_type_display + (job.camera_name ? ` (${Util.esc(job.camera_name)})` : "")
+          + (job.source_display ? ` · ${Util.esc(job.source_display)}` : "")],
+        ...(job.live_snapshot && job.live_snapshot.length ? [["저장 당시 실시간 예측",
+          job.live_snapshot.map((p) => `#${p.track_id} ${Util.esc(p.action_id)} ${Util.esc(p.action_name_ko)} ${Util.pct(p.confidence)}`
+            + (p.streak_seconds ? ` (${Util.sec(p.streak_seconds)} 이어짐)` : "")).join("<br>")
+          + '<br><span class="muted small">아래 결과는 저장한 영상을 업로드와 같은 방법으로 다시 분석한 값입니다 (Track 번호는 다시 매김).</span>']] : []),
         ["영상", Util.esc(job.video_name) || "-"],
         ["수행한 동작(사용자 선택)", job.expected_action ? Util.esc(job.expected_action_display) : "-"],
         ["영상 길이 / AI 처리 시간", `${Util.sec(job.video_seconds)} / ${Util.sec(job.processing_seconds)}`],
@@ -154,7 +173,7 @@
     try {
       const s = await Data.status(id);
       if (s.is_finished) return onDone(await Data.detail(id));
-      if (Util.$("#current")) View.current({ id, status: s.status });
+      if (Util.$("#current")) View.current({ id, status: s.status, result_message: s.result_message });
       if (count < Config.pollLimit) state.polling = setTimeout(() => poll(id, onDone, count + 1), Config.pollMs);
     } catch (err) {
       state.polling = setTimeout(() => poll(id, onDone, count + 1), Config.pollMs * 2);
@@ -187,10 +206,7 @@
       btn.textContent = "요청 중…";
       try {
         const created = await Data.create(fd);   // 202: 분석은 아직, 작업 ID 만 받음
-        View.current({ id: created.id, status: created.status });
-        clearTimeout(state.polling);
-        poll(created.id, (job) => { View.current(job); Handlers.refreshHistory(); });
-        Handlers.refreshHistory();
+        Handlers.track(created);
         form.reset();
       } catch (ex) {
         err.textContent = Util.errorText(ex);
@@ -199,6 +215,12 @@
         btn.disabled = false;
         btn.textContent = "AI 분석 시작";
       }
+    },
+    track(created) {                              // 작업 ID 를 받은 뒤 상태 조회 시작 (분석 시작·장면 저장·자동 감지 공통)
+      View.current({ id: created.id, status: created.status });
+      clearTimeout(state.polling);
+      poll(created.id, (job) => { View.current(job); Handlers.refreshHistory(); });
+      Handlers.refreshHistory();
     },
     async refreshHistory() {
       try { View.history(await Data.list()); } catch (ex) { /* 다음 새로고침 때 다시 */ }
@@ -249,9 +271,10 @@
           return `<tr><td>#${p.track_id}</td><td class="muted">판단 중… (${Util.sec(p.seen_seconds)} 보임)<br><span class="small">${Util.esc(p.reason)}</span></td><td>-</td></tr>`;
         }
         const top3 = p.top3.slice(1).map((t) => `${Util.esc(t.action_id)} ${Util.esc(t.action_name_ko)} ${Util.pct(t.probability)}`).join(" · ");
+        const streak = p.streak_seconds ? ` · ${Util.sec(p.streak_seconds)}째 같은 동작` : "";
         return `<tr class="${p.uncertain ? "uncertain" : ""}">
           <td>#${p.track_id}</td>
-          <td><strong>${Util.esc(p.action_id)} ${Util.esc(p.action_name_ko)}</strong><br><span class="muted small">다음 후보: ${top3}</span></td>
+          <td><strong>${Util.esc(p.action_id)} ${Util.esc(p.action_name_ko)}</strong><br><span class="muted small">다음 후보: ${top3}${streak}</span></td>
           <td><div class="bar"><span style="width:${(p.confidence * 100).toFixed(0)}%"></span></div>${Util.pct(p.confidence)}${p.uncertain ? '<br><span class="badge warn">판단 불확실</span>' : ""}</td></tr>`;
       }).join("");
     },
@@ -289,7 +312,49 @@
       Util.$("#live-meta").textContent = snap.width
         ? `${snap.camera} · ${snap.width}×${snap.height} · 처리 ${snap.fps} fps · ${Util.sec(snap.running_seconds)} 경과`
         : `${snap.camera} · 연결 중…`;
-      if (snap.state === "error" || snap.state === "stopped") Live.end(snap.message, snap.state === "error");
+      if (snap.state === "error" || snap.state === "stopped") { Live.end(snap.message, snap.state === "error"); return; }
+      Live.autoCheck(snap);
+    },
+    // ── 장면 저장 · 자동 감지 ──
+    lastAuto: 0,
+    saving: false,
+    saveMessage(text, ok) {
+      const el = Util.$("#live-save-message");
+      el.textContent = text;
+      el.className = `small ${ok ? "ok-text" : "error"}`;
+      el.hidden = !text;
+    },
+    async save(auto = false) {
+      if (!Live.sid || Live.saving) return;
+      const form = Util.$("#analysis-form");
+      Live.saving = true;
+      const btn = Util.$("#live-save-btn");
+      if (!auto) btn.disabled = true;
+      try {
+        const created = await Data.liveSave(Live.sid, {
+          auto, min_confidence: Util.$("#live-auto-threshold").value,
+          expected_action: form.expected_action.value, title: auto ? "" : form.title.value,
+        });
+        if (auto) Live.lastAuto = Date.now();
+        Live.saveMessage(`${auto ? "자동 감지로" : ""} 저장했습니다 → 분석 #${created.id}${created.title ? ` (${created.title})` : ""}`, true);
+        Handlers.track(created);
+      } catch (ex) {
+        const code = ex?.response?.status;
+        if (auto && (code === 409 || code === 429)) { if (code === 429) Live.lastAuto = Date.now(); return; }  // 조건 아님·간격 — 조용히
+        Live.saveMessage(Util.errorText(ex), false);
+      } finally {
+        Live.saving = false;
+        btn.disabled = false;
+      }
+    },
+    autoCheck(snap) {
+      // 브라우저는 '조건이 된 것 같다'만 보고 요청하고, 실제 판단은 서버(live_views._auto_hit)가 다시 한다
+      if (!Util.$("#live-auto").checked || snap.state !== "running") return;
+      const cfg = Config.liveConfig();
+      if (Date.now() - Live.lastAuto < cfg.cooldown_seconds * 1000) return;
+      const min = Number(Util.$("#live-auto-threshold").value);
+      const hit = snap.people.some((p) => p.status === "ok" && p.streak_seconds >= cfg.min_seconds && p.streak_min_confidence >= min);
+      if (hit) Live.save(true);
     },
     end(text, isError = true) {
       clearInterval(Live.timer);
@@ -314,6 +379,7 @@
 
   // ── 카메라 주소 관리 (관리자만 화면에 있음) ──
   const Cameras = {
+    rotations: [[0, "0°"], [90, "시계 90°"], [180, "180°"], [270, "반시계 90°"]],
     message(text, ok) {
       const el = Util.$("#camera-message");
       el.textContent = text;
@@ -334,10 +400,12 @@
       body.innerHTML = list.length ? list.map((c) => `<tr data-id="${c.id}">
           <td><strong>${Util.esc(c.name)}</strong></td>
           <td><input type="text" class="cam-url" value="${Util.esc(c.url)}" maxlength="200"></td>
+          <td><select class="cam-rotation">${Cameras.rotations.map(([v, label]) =>
+            `<option value="${v}" ${c.rotation === v ? "selected" : ""}>${label}</option>`).join("")}</select></td>
           <td><input type="checkbox" class="cam-enabled" ${c.enabled ? "checked" : ""}></td>
           <td class="nowrap"><button type="button" class="primary small-btn" data-act="save">저장 + 연결 확인</button>
             <button type="button" class="danger small-btn" data-act="delete">삭제</button></td></tr>`).join("")
-        : '<tr><td colspan="4" class="muted">등록된 카메라가 없습니다.</td></tr>';
+        : '<tr><td colspan="5" class="muted">등록된 카메라가 없습니다.</td></tr>';
     },
     async onClick(e) {
       const btn = e.target.closest("button[data-act]");
@@ -353,8 +421,10 @@
           Cameras.message(`'${name}'를 지웠습니다.`, true);
         } else {
           const saved = await Data.saveCamera(id, { url: row.querySelector(".cam-url").value,
+                                                    rotation: Number(row.querySelector(".cam-rotation").value),
                                                     enabled: row.querySelector(".cam-enabled").checked });
-          Cameras.message(`저장했습니다: ${saved.url} — 연결 확인 중…`, true);
+          Cameras.message(`저장했습니다: ${saved.url} · 회전 ${saved.rotation}° — 연결 확인 중…`, true);
+          if (Live.sid) Live.message("카메라 설정이 바뀌었습니다. 실시간 보기를 멈췄다가 다시 시작하면 적용됩니다.", false);
           await Cameras.check(id, name);
         }
         await Cameras.refresh();
@@ -393,6 +463,7 @@
       Util.$$(".tab").forEach((t) => t.addEventListener("click", Handlers.switchTab));
       Util.$("#analysis-form").addEventListener("submit", Handlers.submit);
       Util.$("#live-btn").addEventListener("click", Live.toggle);
+      Util.$("#live-save-btn").addEventListener("click", () => Live.save(false));
       window.addEventListener("pagehide", Live.leave);
       if (Util.$("#camera-admin")) {
         Util.$("#camera-table").addEventListener("click", Cameras.onClick);
