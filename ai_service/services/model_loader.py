@@ -72,6 +72,10 @@ class ModelBundle:
 
 def _check(model, columns: list[str], info: dict) -> None:
     steps, frame_feats = info["sequence_steps"], info["frame_features"]
+    from services.pose_pipeline import FRAME_FEATURES
+    missing = [f for f in frame_feats if f not in FRAME_FEATURES]
+    if missing:
+        raise ValueError(f"서비스가 만들지 않는 Frame Feature: {missing}")
     if model.n_features_in_ != len(columns):
         raise ValueError(f"모델 입력 {model.n_features_in_}개 ≠ Feature 순서 {len(columns)}개")
     # 30단계 × Frame Feature 뒤에 학습 때 덧붙인 Feature(변화량·요약 통계)가 같은 순서로 와야 한다

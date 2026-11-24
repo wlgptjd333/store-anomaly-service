@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from services.pose_pipeline import TrackData
+from services.pose_pipeline import FRAME_FEATURES, TrackData
 
 
 def resample(values: np.ndarray, times: np.ndarray, steps: int) -> np.ndarray:
@@ -36,6 +36,8 @@ def predict_track(track: TrackData, bundle) -> dict:
     steps = info["sequence_steps"]
     times = np.asarray(track.times, dtype=float)
     feats = np.stack(track.features)
+    # 모델이 배운 Frame Feature 만 같은 순서로 (구도 강건 모델은 골반 화면 위치 hip_x_img·hip_y_img 를 뺌 — 26번 실험)
+    feats = feats[:, [FRAME_FEATURES.index(f) for f in info["frame_features"]]]
     valid = np.asarray(track.valid, dtype=bool)
     span = float(times[-1] - times[0]) if len(times) > 1 else 0.0
     quality = {"frames": int(len(times)), "valid_frames": int(valid.sum()),
