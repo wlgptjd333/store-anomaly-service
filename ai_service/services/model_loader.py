@@ -3,6 +3,8 @@
 세 파일이 서로 맞는지 먼저 확인한다 (틀리면 서버가 '준비 안 됨'으로 뜨고 이유를 /health 에 보여 준다).
   - Joblib 의 n_features_in_  == Feature 순서 JSON 길이 == sequence_steps × Frame Feature 수 + 덧붙인 Feature (src/sequence_extras.py)
   - Joblib 의 classes_        == 학습 정보 JSON 의 classes (순서까지)
+  - 학습 정보에 ensemble 이 있으면 1D-CNN(models/action_cnn.pt, src/temporal_cnn.py)도 읽고
+    Class 수·단계 수·Frame Feature 수가 같은지 확인한다. 예측 = ExtraTrees 확률과 1D-CNN 확률의 평균.
 """
 from __future__ import annotations
 
@@ -11,8 +13,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import joblib
+import numpy as np
 
-from src.sequence_extras import extra_names
+from src.sequence_extras import add_extras, extra_names
 
 APP_ROOT = Path(__file__).resolve().parents[1]
 CONFIG_PATH = APP_ROOT / "project.json"
@@ -29,6 +32,7 @@ class ModelBundle:
     feature_columns: list[str] = field(default_factory=list)
     info: dict = field(default_factory=dict)
     pose_model: object = None
+    cnn: object = None               # src.temporal_cnn.CnnEnsemble (없으면 ExtraTrees 만)
     error: str = ""
 
     @property
@@ -39,11 +43,21 @@ class ModelBundle:
     def classes(self) -> list[str]:
         return [str(c) for c in self.model.classes_] if self.model is not None else []
 
+    def predict_proba(self, seq) -> np.ndarray:
+        """seq: (n, 30단계 × Frame Feature) 펼친 값 → (n, Class) 확률. 학습 15번 predict 와 같은 계산."""
+        info = self.info
+        steps, n_frame = info["sequence_steps"], len(info["frame_features"])
+        p = self.model.predict_proba(add_extras(seq, steps, n_frame, info.get("sequence_extras", [])))
+        if self.cnn is not None:
+            p = (p + self.cnn.predict_proba(seq)) / 2
+        return p
+
     def summary(self) -> dict:
         return {
             "ready": self.ready,
             "error": self.error,
-            "model": self.info.get("model"),
+            "model": self.info.get("model") + (" + 1D-CNN" if self.cnn is not None else ""),
+            "ensemble": self.info.get("ensemble"),
             "feature_set": self.info.get("feature_set"),
             "sequence_extras": self.info.get("sequence_extras", []),
             "window": self.info.get("window"),
@@ -80,6 +94,14 @@ def load_bundle(load_pose: bool = True) -> ModelBundle:
         bundle.feature_columns = json.loads((APP_ROOT / cfg["feature_columns"]).read_text(encoding="utf-8"))
         bundle.info = json.loads((APP_ROOT / cfg["training_info"]).read_text(encoding="utf-8"))
         _check(bundle.model, bundle.feature_columns, bundle.info)
+        ens = bundle.info.get("ensemble")
+        if ens:
+            from src.temporal_cnn import CnnEnsemble
+            cnn = CnnEnsemble.load(APP_ROOT / Path(cfg["model"]).parent / ens["cnn_file"])
+            if (cnn.n_cls, cnn.steps, cnn.n_frame) != (len(bundle.info["classes"]), bundle.info["sequence_steps"],
+                                                       len(bundle.info["frame_features"])):
+                raise ValueError("1D-CNN 의 Class·단계·Frame Feature 수가 학습 정보와 다릅니다.")
+            bundle.cnn = cnn
         if load_pose:
             from ultralytics import YOLO
             bundle.pose_model = YOLO(str(APP_ROOT / cfg["pose_model"]))

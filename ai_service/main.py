@@ -30,7 +30,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Store Anomaly Action API",
-              description="무인 상점 이상행동 17종 — YOLO Pose + ByteTrack + ExtraTrees",
+              description="무인 상점 이상행동 17종 — YOLO Pose + ByteTrack + ExtraTrees·1D-CNN",
               version="1.1.0", lifespan=lifespan)
 app.include_router(predictions.router)
 app.include_router(live.router)

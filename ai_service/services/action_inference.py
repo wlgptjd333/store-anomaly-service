@@ -1,4 +1,4 @@
-"""사람별 Frame Feature → 30단계 Sequence (+ 변화량·요약 통계) → ExtraTrees → Track ID 별 Action·Confidence.
+"""사람별 Frame Feature → 30단계 Sequence → ExtraTrees(+ 변화량·요약 통계)와 1D-CNN 확률 평균 → Track ID 별 Action·Confidence.
 
 창(Window) 규칙
   - 모델은 영상 전체(whole)를 30단계로 편 값으로 학습했다. 학습 영상 길이는 2.2~26.8초, 중앙값 5.5초.
@@ -12,7 +12,6 @@ from __future__ import annotations
 import numpy as np
 
 from services.pose_pipeline import TrackData
-from src.sequence_extras import add_extras
 
 
 def resample(values: np.ndarray, times: np.ndarray, steps: int) -> np.ndarray:
@@ -54,8 +53,7 @@ def predict_track(track: TrackData, bundle) -> dict:
         if n_valid < rule["min_valid_frames"] or n_valid / max(n_all, 1) < rule["min_valid_ratio"]:
             continue
         seq = resample(feats[sel], times[sel], steps).reshape(1, -1)
-        seq = add_extras(seq, steps, feats.shape[1], info.get("sequence_extras", []))  # 학습 때와 같은 덧붙인 Feature
-        p = bundle.model.predict_proba(seq)[0]
+        p = bundle.predict_proba(seq)[0]      # 덧붙인 Feature·1D-CNN 평균은 model_loader 에서 (학습 15번과 같은 계산)
         probs.append(p)
         k = int(np.argmax(p))
         windows.append({"start_sec": round(s, 2), "end_sec": round(e, 2), "action_id": bundle.classes[k],

@@ -65,12 +65,13 @@ docker compose exec django python manage.py createsuperuser
 | 파일 | 내용 | Git |
 |---|---|---|
 | `action_model.joblib` | ExtraTrees 1000그루 (17 Class, 8.7 MB) | 포함 |
+| `action_cnn.pt` | 시간 순서 1D-CNN 3개 (난수 42·0·1, 0.9 MB) — ExtraTrees 확률과 평균 (`src/temporal_cnn.py`) | 포함 |
 | `feature_columns.json` | 입력 2,560개 Feature 이름·순서 | 포함 |
 | `training_info.json` | Class 이름, 30단계, Frame Feature 40개, 덧붙인 Feature 종류, Pose 설정, 평가 수치 | 포함 |
 | `yolo11n-pose.pt` | YOLO Pose 가중치 (Ultralytics) | 제외 — Docker 빌드 때 자동으로 받음 |
 
 모델을 다시 만들려면 데이터 저장소에서 `scripts/15_export_service_model.py` 를 실행한 뒤 `bash scripts/update_model.sh [데이터 저장소 경로] [확인용 영상]` —
-세 파일 복사, Feature 코드가 두 저장소에서 같은지 확인, Pose 모델 일치 확인, fastapi 다시 빌드(모델이 이미지 안에 들어감), `/health`·E2E 확인까지 합니다.
+모델 파일 복사(1D-CNN 포함), Feature·모델 코드가 두 저장소에서 같은지 확인, Pose 모델 일치 확인, fastapi 다시 빌드(모델이 이미지 안에 들어감), `/health`·E2E 확인까지 합니다.
 영상 추가부터 전체 순서는 데이터 저장소 [Runbook](https://github.com/wlgptjd333/unmanned-store-anomaly/blob/main/docs/RETRAIN_RUNBOOK.md).
 
 로컬(도커 없이) 테스트: `cd backend && pip install -r requirements.txt && python manage.py test` (SQLite·가짜 AI 서버로 31개).
@@ -85,7 +86,7 @@ flowchart TB
         D["django<br/>Django + DRF<br/>(gunicorn :8000)"]
         R[("redis<br/>작업 대기열")]
         C["celery<br/>Celery Worker"]
-        F["fastapi<br/>AI 추론 :8001<br/>YOLO Pose + ByteTrack + ExtraTrees"]
+        F["fastapi<br/>AI 추론 :8001<br/>YOLO Pose + ByteTrack + ExtraTrees·1D-CNN"]
         P[("postgres<br/>auth_user · AnalysisJob<br/>PersonPrediction")]
         M[/"media 볼륨<br/>업로드·수집 영상"/]
     end
@@ -211,7 +212,7 @@ sequenceDiagram
         T->>T: camera_capture.py 8초 수집 → MP4 저장
     end
     T->>F: services.py: POST /predict/video (영상 파일)
-    F->>F: YOLO Pose + ByteTrack → 사람별 40값/Frame → 30단계 + 변화량·요약 통계 → ExtraTrees
+    F->>F: YOLO Pose + ByteTrack → 사람별 40값/Frame → 30단계 → ExtraTrees(+ 변화량·요약 통계)·1D-CNN 확률 평균
     F-->>T: {predictions: [track_id, action, confidence …]}
     T->>DB: PersonPrediction 저장 + SUCCESS (실패 시 FAILURE + 사유)
     JS->>V: GET /api/analyses/{id}/
@@ -225,12 +226,12 @@ sequenceDiagram
 | 백그라운드 처리 | `backend/analyses/tasks.py`, `camera_capture.py`, `services.py` |
 | 추론 API | `ai_service/main.py`, `routers/predictions.py` |
 | 영상 → 사람별 Feature | `ai_service/services/pose_pipeline.py` (+ `src/` 의 Feature 코드, 데이터 저장소에서 복사) |
-| 모델 로드·예측 | `ai_service/services/model_loader.py`, `action_inference.py`, `src/sequence_extras.py` |
+| 모델 로드·예측 | `ai_service/services/model_loader.py`, `action_inference.py`, `src/sequence_extras.py`, `src/temporal_cnn.py` |
 | 대시보드 집계·차트 | `backend/analyses/page_views.py`, `backend/static/js/dashboard.js` |
 
 ## 6. 사용한 모델과 입력 형식
 
-**왜 Joblib 하나로는 영상을 분류할 수 없나** — 분류 모델(ExtraTrees)은 숫자 2,560개를 받는 분류기일 뿐입니다.
+**왜 Joblib 하나로는 영상을 분류할 수 없나** — 분류 모델(ExtraTrees·1D-CNN)은 숫자(2,560개 / 30단계 × 80)를 받는 분류기일 뿐입니다.
 영상에서 사람을 찾고(YOLO Pose), 사람을 이어 붙이고(ByteTrack), 학습 때와 **같은 계산·같은 순서**로 숫자를 만드는 과정이 앞에 있어야 합니다.
 
 | 단계 | 내용 |
@@ -242,7 +243,9 @@ sequenceDiagram
 | Sequence | 유효 Frame 을 시간 0~1 로 펴서 30단계로 보간 → 30 × 40 = 1,200 |
 | 덧붙인 Feature | 단계 사이 변화량 29 × 40 = 1,160 + Feature 마다 30단계의 평균·표준편차·최솟값·최댓값·범위 5 × 40 = 200 → 합계 **2,560** (`src/sequence_extras.py`, 학습 쪽과 같은 파일) |
 | 창(Window) | 사람이 보인 시간이 8초 이하면 전체가 창 1개, 더 길면 8초 창을 4초씩 밀며 확률 평균 |
-| 모델 | ExtraTrees(Extremely Randomized Trees) 1000그루, class_weight balanced, 17 Class — Random Forest 와 같은 나무 모음 방식에서 나누는 기준을 무작위로 뽑는 변형 |
+| 모델 ① | ExtraTrees(Extremely Randomized Trees) 1000그루, class_weight balanced, 17 Class — Random Forest 와 같은 나무 모음 방식에서 나누는 기준을 무작위로 뽑는 변형. 입력 2,560 |
+| 모델 ② | 1D-CNN (Conv1d 3층, 시간 방향 평균·최댓값) 난수 3개 평균. 입력 = 30단계 × (관절 40 + 변화량 40) |
+| 합치기 | ① 확률과 ② 확률의 평균 → 가장 높은 동작·Confidence (`ModelBundle.predict_proba`, 학습 15번과 같은 계산) |
 
 - **학습 데이터 (2026-11-24 갱신)**: 3팀 5명 × 17동작 × **정면·측면·뒷모습** = 255개 영상 (RGB) + 학습 때만 **좌우 반전** 복사본을 더함.
   평가는 사람 단위로 나눠 Train S01~S03 → Validation S04 / Test S05(다른 날 따로 촬영). 서비스용은 5명 전부로 다시 학습했습니다.
@@ -251,7 +254,8 @@ sequenceDiagram
   |---|---|---|---|
   | 11/22 정면·측면 170개 | 73.5% | 61.8% | — (뒷모습 평가 없음) |
   | 11/24 오전: 정면·측면·뒤 255개 + 좌우 반전 (RF) | 68.6% | 74.5% | 76.5% / 76.5% / 70.6% |
-  | **11/24 오후: + 변화량·요약 통계, ExtraTrees (현재)** | **88.2%** | **78.4%** | 88.2% / 76.5% / 70.6% |
+  | 11/24 오후: + 변화량·요약 통계, ExtraTrees | 88.2% | 78.4% | 88.2% / 76.5% / 70.6% |
+  | **11/24 밤: ExtraTrees + 1D-CNN 확률 평균 (현재)** | **98.0%** | **82.4%** | 88.2% / 82.4% / 76.5% |
 
 - **뒷모습을 넣은 이유**: 매장 카메라는 사람을 뒤에서도 봅니다. 11/23 5명이 뒷모습을 다시 찍어 확인해 보니,
   정면·측면으로만 배운 모델은 뒷모습을 **37%** 만 맞혔습니다 (LOSO: 한 명씩 빼고 학습해 그 사람으로 평가, whole 창).
@@ -263,8 +267,13 @@ sequenceDiagram
   고르는 기준은 **S01~S04 사람 단위 4-fold** 만 쓰고(Test S05 는 고른 뒤 확인만), 난수 3개 평균으로
   지금 RF 71.9% → ExtraTrees + 변화량·요약 통계 **82.4%** (가장 낮은 사람도 74.5%). 5명 LOSO 75.7 → 83.5%, 뒷모습 71.8 → 76.5%.
   LogisticRegression(63%)·SVM(73~77%)·골반 위치 빼기(-pos)는 더 낮았습니다. 결과 표: 데이터 저장소 `reports/tables/model_improvement_*.csv`.
-- **Confidence 기준 30% 를 그대로 둔 이유**: 학습에 없던 사람(Validation·Test)에서 새 모델의 정답 평균 확률 0.37~0.40, 오답 0.28~0.29 로
-  예전 RF 와 비슷했고, 30% 이상만 보면 정확도 89~93% 입니다. 학습에 들어간 영상은 90% 가까이 나오므로 시연 숫자를 정확도로 읽으면 안 됩니다.
+- **1D-CNN 을 더한 이유 (21번 실험)**: ExtraTrees 는 30단계를 펼쳐 '몇 번째 단계에 어느 관절이 어디' 를 따로 봐서, 시작이 조금 어긋나면 약합니다.
+  1D-CNN 은 필터가 시간 방향으로 미끄러져 '어떤 움직임 모양이 있나' 를 봅니다. 같은 4-fold 규칙(난수 3개)으로
+  ExtraTrees 82.4 → 1D-CNN 84.8 · GRU 79.7 → **ExtraTrees + 1D-CNN 평균 88.6 ± 1.4** (뒷모습 70.6 → 79.9, 가장 낮은 사람 75.2 → 84.3).
+  두 모델이 틀리는 동작이 달라 평균이 둘보다 낫습니다 (A013 샷건 50 → 92%, A002 75 → 100%, 대신 A003 앞차기 92 → 72%).
+  분석 시간은 2.8초 영상 7.3 → 8.1초로 거의 같습니다 (Pose 가 대부분). 결과 표: 데이터 저장소 `reports/tables/temporal_models_*.csv`.
+- **Confidence 기준 30% 를 그대로 둔 이유**: 학습에 없던 사람(S01~S04 4-fold)에서 ExtraTrees + 1D-CNN 의 정답 평균 확률 0.51, 오답 0.32.
+  30% 위쪽 정확도는 ExtraTrees 만일 때와 같고(95.3 → 95.4%), `판단 불확실` 로 표시되는 비율만 37% → 15% 로 줄어 기준을 바꾸지 않았습니다. 학습에 들어간 영상은 90% 가까이 나오므로 시연 숫자를 정확도로 읽으면 안 됩니다.
 - **창을 `whole`(영상 전체)로 고른 이유**: 서비스로 들어오는 영상에는 사람이 표시한 '동작 구간'이 없습니다.
   구간(segment) 모델이 Validation 76.5% 로 조금 높지만 차이가 난수 변동(±4%p) 안이라, 입력 모양이 서비스와 같은 whole 모델을 씁니다.
 - **입력 영상**: mp4·mov·avi·mkv·webm, 100 MB 이하, 처음 60초까지. 60fps 는 30fps 로 줄여 처리.
@@ -358,8 +367,8 @@ FastAPI `POST /predict/video` 응답 형식 (발췌, 11/23 첫 모델 때 받은
 
 | 테스트 | 확인 방법 | 결과 |
 |---|---|---|
-| T01 모델 불러오기 | `GET /health` — 3개 파일 교차 확인(입력 수·Feature 순서·Class) | ExtraTreesClassifier · 17 Class · 2,560 Feature · ready |
-| T02 영상 업로드 | `scripts/e2e_check.py` (Docker, 세션 로그인 → API) | PENDING → STARTED → SUCCESS. 11/24 오후 모델로 정면 A005·뒷모습 A001·A011·A016·A012 5개 모두 예측 일치 (학습에 들어간 영상이라 흐름 확인용). 통일 번호로 바꾼 뒤 다시: A005 밀치기 90%·A013 샷건(뒤) 85% 일치 |
+| T01 모델 불러오기 | `GET /health` — 파일 교차 확인(입력 수·Feature 순서·Class, 1D-CNN 의 Class·단계 수) | ExtraTreesClassifier + 1D-CNN · 17 Class · 2,560 Feature · ready |
+| T02 영상 업로드 | `scripts/e2e_check.py` (Docker, 세션 로그인 → API) | PENDING → STARTED → SUCCESS. 11/24 오후 모델로 정면 A005·뒷모습 A001·A011·A016·A012 5개 모두 예측 일치 (학습에 들어간 영상이라 흐름 확인용). 통일 번호로 바꾼 뒤 다시: A005 밀치기 90%·A013 샷건(뒤) 85% 일치. 1D-CNN 더한 뒤(`update_model.sh`): A005 88% 일치, AI 8.1초 |
 | T03 IP Webcam | ① 가짜 카메라: Worker 컨테이너 안에서 MJPEG `/video` 로 S04 영상을 반복 송출, `IPWEBCAM_CAMERAS` 에 임시 등록 ② 휴대폰 IP Webcam 앱 | ① 202(0.1초) → 8.0초 MP4 저장 → SUCCESS, 허용 목록 밖 이름은 400. 예측은 짧은 영상을 되풀이한 입력이라 `판단 불확실`(A002 24%) ② 실제 휴대폰(11/24): 카메라 주소 관리에서 연결 확인 640×480(0.1초), Celery 컨테이너에서 Frame 수신 확인. 사람이 동작하는 8초 분석 시연은 남음 |
 | 추가: 장면 저장·자동 감지 (11/24) | 실시간 보기 중 '이 장면 저장' · 자동 감지 조건 미달·간격 안 재요청 · S04 A002 영상을 옆으로 눕혀 흘려 넣고 회전 0°/90° 비교 | 202 → 저장 영상 Celery 분석 SUCCESS(`실시간 장면 저장`, 재녹화 없음) · 409 / 429 · 0°: A009 앞으로 눕기 26% → 90°: A002 37.7%, 같은 8초를 저장해 다시 분석해도 A002 35.4% |
 | 추가: 실시간 보기 (11/24) | 휴대폰 IP Webcam → 브라우저 '실시간 보기' · S04 Validation 영상(A002 정면)을 30fps 로 흘려 넣기 | Docker CPU 로 20~22 fps(사람 없음), 영상은 사람 1명 Skeleton + `A002` 36~40% 로 표시, 멈춤 → 204 |
@@ -401,7 +410,7 @@ store-anomaly-service/
 │   └── Dockerfile
 ├── ai_service/             FastAPI
 │   ├── main.py routers/ services/   predictions(영상 1건) · live(실시간 보기 세션)
-│   ├── src/                데이터 저장소(unmanned-store-anomaly)에서 복사: pose_utils · feature_utils · team_feature_utils · sequence_extras
+│   ├── src/                데이터 저장소(unmanned-store-anomaly)에서 복사: pose_utils · feature_utils · team_feature_utils · sequence_extras · temporal_cnn
 │   ├── models/             Joblib · Feature 순서 · 학습 정보
 │   └── Dockerfile
 ├── scripts/                e2e_check.py (Docker 통합 확인) · capture_screens.py (README 캡처) · update_model.sh (모델 교체)
@@ -410,10 +419,9 @@ store-anomaly-service/
 
 ## 한계
 
-- 학습 데이터가 5명·한 장소라, 다른 사람·다른 카메라 높이·다른 조명에서는 틀릴 수 있습니다 (Test S05 78.4%, 뒷모습은 70.6%).
-  5명 LOSO(지금 모델, 난수 3개)에서 약한 동작: A013 샷건(뒤 20% · 정면 53% · 측면 53%), A015 옆으로 쓰러지기(뒤 40%),
-  A006 휘두르기(측면 40% · 정면 60%), A004 잡고 흔들기(측면 47% · 뒤 60%) — 서서 팔만 움직이는 동작끼리 헷갈립니다.
+- 학습 데이터가 5명·한 장소라, 다른 사람·다른 카메라 높이·다른 조명에서는 틀릴 수 있습니다 (Test S05 82.4%, 뒷모습은 76.5%).
+  S01~S04 4-fold(지금 모델, 난수 3개)에서 약한 동작: A005 밀치기 64%, A004 잡고 흔들기 67%, A003 앞차기 72% — 서서 팔·다리를 한 번 내미는 동작끼리 헷갈립니다.
   틀리면 **입력 품질(관절 Conf·유효 Frame) → Pose → Feature → 창 → 모델** 순서로 원인을 봅니다. 결과 표에 입력 품질을 함께 보여 주는 이유입니다.
 - 골반 화면 위치(`hip_x_img`, `hip_y_img`)를 Feature 로 쓰므로, 학습 때와 다른 화면 구도(가로/세로, 카메라 위치)에 약합니다.
 - 실시간 보기는 CPU 처리라 사람이 많을수록 fps 가 떨어지고, 한 번에 세션 하나만 돌립니다. 실시간 보기를 켠 채 분석하면 CPU 를 나눠 써 처리 시간이 2~5배 길어집니다. 8초 창이 다 차기 전(처음 몇 초)의 예측은 짧은 구간 기준이라 흔들립니다.
-- 17개 중 하나를 반드시 고르는 구조라 "정상 행동"을 따로 판정하지 못합니다. Confidence 기준(30%)은 Validation 평균 최고 확률(약 39%)을 보고 정한 값입니다.
+- 17개 중 하나를 반드시 고르는 구조라 "정상 행동"을 따로 판정하지 못합니다. Confidence 기준(30%)은 처음 Validation 평균 최고 확률(약 39%)을 보고 정했고, 모델을 바꿀 때마다 30% 위쪽 정확도로 다시 확인합니다.

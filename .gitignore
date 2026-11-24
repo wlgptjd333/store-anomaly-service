@@ -25,3 +25,4 @@ backend/staticfiles/
 
 # Pose 가중치는 Docker 이미지 만들 때 받는다 (Ultralytics 배포 파일)
 *.pt
+!ai_service/models/action_cnn.pt
