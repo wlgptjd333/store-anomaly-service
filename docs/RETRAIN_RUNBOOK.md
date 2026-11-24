@@ -40,6 +40,20 @@
   (`15` 의 `--views` 와 `VIEW_NAMES` 에도 `D` 를 더해야 학습에 들어감)
 - 처음 촬영분(11/13·11/16, 핸드폰 원래 이름 `YYYYMMDD_HHMMSS.mp4`)은 `교과10 동작 영상/` 에서 촬영 시각으로 동작을 정합니다. 새로 찍는 건 이 방식 말고 통일 이름으로.
 
+### 1-1b. 웹 서비스에서 찍힌 영상 가져오기 (IP Webcam 녹화)
+
+서비스(store-anomaly-service)가 분석한 영상 원본은 Docker 볼륨 안에 있습니다. 새 장소·각도에서 찍힌 것이라 다음 학습에 가장 쓸모 있습니다.
+
+```bash
+cd ~/ai_vision/store-anomaly-service
+docker compose exec django python manage.py export_clips --labeled-only --since 2026-11-24   # → exports/<시각>/
+```
+
+1. `exports/<시각>/manifest.csv` 를 열어 영상마다 **사람이 직접 보고** 동작이 맞는지 `label_checked` 칸에 표시 (`expected_action` 은 시연자가 고른 값이라 틀릴 수 있음).
+2. 한 사람이 한 동작만 하는 영상만 골라 팀 통일 이름으로 바꿔 팀 드라이브에 둠 — 예: `S04_A005_T04.mp4` (대각선 등 새 방향은 위 '새 방향' 규칙).
+   여러 동작이 섞인 긴 녹화는 동작 구간만 잘라서. 다른 사람이 나오면 쓰지 않음.
+3. 그다음은 아래 1-2 부터 같음. 자동 감지(`LIVE_AUTO`)로 저장된 영상은 모델이 이미 맞힌 것 위주라(선택 편향) 평가용으로는 쓰지 말고 학습에만.
+
 ### 1-2. 목록·복사·검사
 
 ```bash
@@ -93,6 +107,9 @@ python scripts/13_build_sequence_dataset.py      # 30단계 고정 길이 → re
 | `19_model_improvement.py` | 덧붙이는 Feature × RF·ExtraTrees·SVM | `model_improvement_cv.csv` | 약 3분 |
 | `21_temporal_models.py [--test]` | 1D-CNN·GRU 와 ExtraTrees 섞기 (지금 서비스 = ExtraTrees + 1D-CNN) | `temporal_models_cv.csv`, `_per_action.csv` | GPU 약 4분 |
 | `20_more_improvements.py [이름 일부]` | Pose 모델 크기, 단계 수, 떨림 줄이기, TTA, 나무 설정, 시간 자르기 증강 | `more_improvements_cv.csv` | 설정 하나에 1~2분 |
+| `22_gpu_search.py [--only 이름] [--test "a,b"]` | 1D-CNN 크기·평균 개수·mixup·TTA·TCN·Transformer·Pose 11s/11m·섞는 비율 | `gpu_search_*.csv` | GPU, 설정 하나에 1~4분 |
+| `23_mocap_synthetic.py [--views 8,16] [--test]` | 교과12 VICON 3D 를 가상 카메라로 2D 투영한 합성 데이터를 학습에 더하기 | `mocap_synthetic_*.csv` | GPU, 설정 하나에 약 7분 |
+| `24_geo_augment.py [--only rot,all] [--test all]` | Keypoint 회전·시간 늘이기·앞뒤 자르기·화면 위치 이동 증강 | `geo_augment_*.csv` | GPU, 설정 하나에 약 8분 |
 
 - 새 방법은 `20` 의 `configs()` 에 한 줄(또는 `DATASETS` 에 데이터 하나) 더하고 `python scripts/20_more_improvements.py <이름 일부>` 로 그것만 돌리면 기존 표에 합쳐집니다.
 - 입력을 바꾸는 실험은 기본 데이터를 건드리지 않게 만듭니다:
