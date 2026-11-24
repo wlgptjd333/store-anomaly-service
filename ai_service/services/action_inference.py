@@ -44,6 +44,12 @@ def predict_track(track: TrackData, bundle) -> dict:
                "mean_keypoint_conf": round(float(np.mean(track.keypoint_conf)), 3)}
     if span < cfg["min_track_seconds"]:
         return {"skipped": True, "reason": f"화면에 {span:.1f}초만 보여 판단하지 않음", **quality}
+    # 의자·가방 같은 물체를 사람으로 잡은 Track 은 관절 Confidence 평균이 0.1~0.3 (진짜 사람은 학습 영상 최저 0.77,
+    # 서비스 기록 최저 0.64) → 동작을 지어내지 않게 거른다 (docs/PIPELINE.md 6단계)
+    min_kp = cfg.get("min_track_keypoint_conf", 0.0)
+    if quality["mean_keypoint_conf"] < min_kp:
+        return {"skipped": True, "reason": f"관절 Confidence 평균 {quality['mean_keypoint_conf']:.2f} (< {min_kp:.1f}) — "
+                                            "사람이 아닌 물체로 보여 판단하지 않음", **quality}
 
     probs, windows = [], []
     for s, e in make_windows(float(times[0]), float(times[-1]), cfg["window_seconds"], cfg["window_stride_seconds"]):

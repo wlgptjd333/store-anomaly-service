@@ -13,6 +13,7 @@
   "window_seconds": 8.0,
   "window_stride_seconds": 4.0,
   "min_track_seconds": 1.0,
+  "min_track_keypoint_conf": 0.4,
   "uncertain_below": 0.3,
   "max_video_seconds": 60,
   "max_upload_mb": 100,
