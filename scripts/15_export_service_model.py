@@ -80,6 +80,8 @@ def parse_args():
     ap.add_argument("--extras", default="velocity,stats", help='덧붙일 Feature (velocity, stats). 없으면 ""')
     ap.add_argument("--cnn-seeds", default="42,0,1",
                     help='1D-CNN 난수 (쉼표). 여러 개면 확률 평균. 없으면 "" → ExtraTrees 만 (GPU 있으면 약 1분)')
+    ap.add_argument("--cnn-width", type=int, default=128,
+                    help="1D-CNN 채널 폭 (22번: 64 → 128 이 4-fold 90.2 → 91.7, Test S05 86.3 → 88.2). 예전 모델은 64")
     ap.add_argument("--repo-ids", action="store_true",
                     help="Class 를 이 저장소 번호(A01..)로. 기본은 팀 통일 번호(A001.., unified_label_map.csv)")
     return ap.parse_args()
@@ -143,7 +145,7 @@ def main() -> None:
         if cnn_seeds:
             idx = {c: i for i, c in enumerate(tree.classes_)}      # CNN 출력 순서 = ExtraTrees classes_ 순서
             cnn = CnnEnsemble.fit(Xb, np.array([idx[a] for a in yp]), STEPS, len(FRAME_FEATURES),
-                                  len(tree.classes_), cnn_seeds)
+                                  len(tree.classes_), cnn_seeds, width=args.cnn_width)
         return tree, cnn
 
     def predict(models, Xb: np.ndarray) -> np.ndarray:
@@ -197,7 +199,8 @@ def main() -> None:
                            **({"repo_action_id": acts[c]["repo_action_id"]} if "repo_action_id" in acts[c] else {})}
                        for c in classes},
         "class_ids": "repo" if args.repo_ids else "unified",
-        "ensemble": ({"cnn_file": "action_cnn.pt", "cnn_seeds": cnn_seeds, "combine": "mean(ExtraTrees, 1D-CNN)",
+        "ensemble": ({"cnn_file": "action_cnn.pt", "cnn_seeds": cnn_seeds, "cnn_width": args.cnn_width,
+                      "combine": "mean(ExtraTrees, 1D-CNN)",
                       "code": "src/temporal_cnn.py"} if final_cnn is not None else None),
         "model_params": params,
         "pose": {"model": PROJECT["pose_model"], "image_size": PROJECT["image_size"],

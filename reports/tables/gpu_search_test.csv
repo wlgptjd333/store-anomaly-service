@@ -1,0 +1,7 @@
+﻿set,config,acc_all,acc_FS,acc_B,subj_min
+validation_S04,1D-CNN 난수 3개 평균 (서비스 모양),97.4,100.0,92.2,97.4
+test_S05,1D-CNN 난수 3개 평균 (서비스 모양),86.3,85.3,88.2,86.3
+validation_S04,1D-CNN 폭 128 · 난수 3개,97.4,99.0,94.1,97.4
+test_S05,1D-CNN 폭 128 · 난수 3개,88.2,88.2,88.2,88.2
+validation_S04,Pose 11m · 난수 3개,99.3,100.0,98.0,99.3
+test_S05,Pose 11m · 난수 3개,85.0,83.3,88.2,85.0

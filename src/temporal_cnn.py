@@ -58,10 +58,11 @@ def crop_batch(x: torch.Tensor, cut: float = 0.15) -> torch.Tensor:
 
 def fit_cnn(Xseq: np.ndarray, y: np.ndarray, seed: int, n_cls: int, epochs: int = 120,
             device: str | None = None, width: int = 64,
-            make_model: Callable[[int, int], nn.Module] | None = None):
+            make_model: Callable[[int, int], nn.Module] | None = None, mixup: float = 0.0):
     """Xseq (n, C, T), y 정수 0..n_cls-1 → (eval 상태 모델, mu, sd)
 
-    make_model(채널 수, Class 수): 다른 시간 모델을 같은 학습 규칙으로 비교할 때만 (21번 실험의 GRU). 기본은 CNN.
+    make_model(채널 수, Class 수): 다른 시간 모델을 같은 학습 규칙으로 비교할 때만 (21·22번 실험). 기본은 CNN.
+    mixup: 0 보다 크면 묶음 안 두 영상을 Beta(mixup, mixup) 비율로 섞어 학습 (22번 실험). 기본 0 = 안 함.
     """
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
     torch.manual_seed(seed)
@@ -84,7 +85,14 @@ def fit_cnn(Xseq: np.ndarray, y: np.ndarray, seed: int, n_cls: int, epochs: int 
             xb = crop_batch(xt[idx])
             xb = xb + 0.05 * torch.randn_like(xb)
             opt.zero_grad()
-            loss_fn(model(xb), yt[idx]).backward()
+            if mixup > 0:
+                lam = float(np.random.beta(mixup, mixup))
+                j = torch.randperm(len(idx), device=device)
+                out = model(lam * xb + (1 - lam) * xb[j])
+                loss = lam * loss_fn(out, yt[idx]) + (1 - lam) * loss_fn(out, yt[idx][j])
+            else:
+                loss = loss_fn(model(xb), yt[idx])
+            loss.backward()
             opt.step()
             sched.step()
     model.eval()
@@ -108,12 +116,13 @@ class CnnEnsemble:
         self.seeds = seeds or []
 
     @classmethod
-    def fit(cls, X: np.ndarray, y: np.ndarray, steps: int, n_frame: int, n_cls: int, seeds, epochs: int = 120):
+    def fit(cls, X: np.ndarray, y: np.ndarray, steps: int, n_frame: int, n_cls: int, seeds, epochs: int = 120,
+            width: int = 64):
         """X (n, steps × n_frame) 펼친 값. 정규화 값은 첫 모델과 같게 (모두 같은 데이터라 같음)."""
         Xs = to_seq(X, steps, n_frame)
-        fitted = [fit_cnn(Xs, y, s, n_cls, epochs) for s in seeds]
+        fitted = [fit_cnn(Xs, y, s, n_cls, epochs, width=width) for s in seeds]
         models = [m.cpu() for m, _, _ in fitted]
-        return cls(models, fitted[0][1], fitted[0][2], steps, n_frame, n_cls, seeds=list(seeds))
+        return cls(models, fitted[0][1], fitted[0][2], steps, n_frame, n_cls, width=width, seeds=list(seeds))
 
     def predict_proba(self, X: np.ndarray) -> np.ndarray:
         Xs = to_seq(X, self.steps, self.n_frame)

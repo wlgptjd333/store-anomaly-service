@@ -110,6 +110,7 @@ Sequence CSV (clip 하나 = 파일 하나, 159열)
 | `scripts/17_flip_and_view_check.py` | 좌우 반전 증강 전/후, 학습에 없던 촬영 각도 정확도 → `flip_augmentation.csv`, `view_generalization.csv` |
 | `scripts/19_model_improvement.py` | 서비스 모델 정확도 올리기 (Feature 덧붙이기 × RF·ExtraTrees·SVM, S01~S04 4-fold 로 고름) → `model_improvement_*.csv` |
 | `scripts/20_more_improvements.py` | 19번 모델에서 더 올리기 (Pose 11n·11s·11m, 단계 수, 떨림 줄이기, 좌우 반전 평균, 나무 설정, ET+SVM, 시간 자르기 증강) → `more_improvements_cv.csv` |
+| `scripts/22_gpu_search.py` | GPU 로 20가지 비교 (1D-CNN 크기·평균 개수·mixup·TTA·TCN·Transformer·Pose 11s/11m·섞는 비율, 4-fold, `--test` 로 확인) → `gpu_search_*.csv` |
 | `scripts/21_temporal_models.py` | 시간 순서 모델 1D-CNN·GRU 와 ExtraTrees 섞기 (4-fold, `--test` 로 Validation·Test 확인, GPU 약 4분) → `temporal_models_*.csv`. 모델 코드는 `src/temporal_cnn.py` (서비스와 같은 파일) |
 | `scripts/18_back_view_experiments.py` | 뒷모습을 학습에 넣었을 때 (정면·측면·뒤 따로, 좌우 반전, 얼굴 관절 빼기, 동작별) → `back_view_*.csv`, `docs/images/back_view_summary.png` |
 | `scripts/08_draw_skeleton_figure.py` | 동작별 뼈대 그림 (영상·얼굴 없이) → `docs/images/actions_skeleton.png` |
@@ -165,10 +166,12 @@ Sequence CSV (clip 하나 = 파일 하나, 159열)
   |---|---:|---:|---:|
   | Random Forest 300 | 71.9 | 70.6 | 71.9 |
   | ExtraTrees 1000 + 변화량·요약 통계 | 82.4 | 88.2 | 78.4 |
-  | **ExtraTrees + 시간 순서 1D-CNN 확률 평균 (지금 서비스, [5-5](docs/BASELINE_EVALUATION.md))** | **87.9** | **98.0** | **82.4** |
+  | ExtraTrees + 시간 순서 1D-CNN 3개 평균 (11/24 밤, [5-5](docs/BASELINE_EVALUATION.md)) | 90.2 | 98.0 | 82.4 |
+  | **ExtraTrees + 1D-CNN 폭 128 · 3개 평균 (지금 서비스, [5-6](docs/BASELINE_EVALUATION.md))** | **91.7** | **96.1** | **88.2** |
 
   - 같은 30fps 에서 Pose 11n 81.5 · 11s 82.7 · 11m 83.5 — 11m 은 CPU 4배라 11n 유지. 단계 수·떨림 줄이기·TTA·나무 설정·SVM 섞기·시간 자르기 증강은 모두 변동 안
-  - 1D-CNN 을 섞으니 뒤 70.6 → 78.4 (4-fold), A13 50 → 89%. 남은 약한 동작은 A05 밀치기·A04 흔들기·A03 앞차기 (67~75%) → 더 올리려면 데이터(대각선, 약한 동작 추가 촬영)
+  - 1D-CNN 을 섞으니 뒤 70.6 → 83.3 (4-fold), A13 50 → 92%. GPU 로 20가지를 더 비교(22번)해 폭 128 만 채택, Pose 11m 은 4-fold 94.0 이지만 Test 85.0 · CPU 4배라 보류
+  - 남은 약한 동작은 A05 밀치기 72% (A03·A04·A09·A15 83%) → 더 올리려면 데이터(새 사람·장소·대각선, 약한 동작 추가 촬영)
 
 ## 실행
 
@@ -193,6 +196,7 @@ python scripts/18_back_view_experiments.py          # 뒷모습 추가 실험 (�
 python scripts/19_model_improvement.py             # 서비스 모델 Feature·모델 비교 (약 3분)
 python scripts/20_more_improvements.py             # 더 해 본 방법들 (Pose 크기 비교는 데이터를 먼저 만듦, 스크립트 첫머리 참고)
 python scripts/21_temporal_models.py --test        # 시간 순서 모델 1D-CNN·GRU (GPU 약 4분)
+python scripts/22_gpu_search.py                    # 20가지 비교 (GPU 약 30분), --test "이름" 으로 고른 뒤 확인
 python scripts/15_export_service_model.py          # 서비스용 모델 → artifacts/service/ (서비스 저장소 scripts/update_model.sh 로 넣음)
 python scripts/07_render_overlay.py --subject S04   # YOLO 다시 안 돌림, 영상 1개 약 10초
 ```
@@ -205,7 +209,7 @@ python scripts/07_render_overlay.py --subject S04   # YOLO 다시 안 돌림, �
 - [x] 동작 시작·끝 구간 자동 추정 (`segments_auto.csv`) — 사람 확인 남음
 - [x] 동작별 관절 QA → Human QA (PASS 170) → Approved Manifest → 사람 단위 Split·Leakage 검사
 - [x] Sequence 를 고정 길이(30단계)로 맞추고 Random Forest Baseline 학습·오류 분석·Test
-- [x] 시간 순서 모델 (1D-CNN / GRU) 을 같은 Split 으로 비교 (11/24, ExtraTrees + 1D-CNN 을 서비스에: 4-fold 82.4 → 87.9, Test S05 78.4 → 84.3)
+- [x] 시간 순서 모델 (1D-CNN / GRU) 을 같은 Split 으로 비교 (11/24, ExtraTrees + 1D-CNN 을 서비스에: 4-fold 82.4 → 87.9, Test S05 78.4 → 84.3; 폭 128 · 3개 평균 91.7 / Test 88.2)
 - [ ] VICON 3D 동작을 여러 각도로 2D 투영해 학습 데이터 늘리기 (동작 번호 대응 확인부터)
 - [ ] 동작 구간 끝 사람 확인 (누운 동작)
 - [x] 뒷모습 85개 촬영·학습 (11/23) — 뒤 39% → 73%, 정면·측면 유지
