@@ -165,10 +165,10 @@ Sequence CSV (clip 하나 = 파일 하나, 159열)
   |---|---:|---:|---:|
   | Random Forest 300 | 71.9 | 70.6 | 71.9 |
   | ExtraTrees 1000 + 변화량·요약 통계 | 82.4 | 88.2 | 78.4 |
-  | **ExtraTrees + 시간 순서 1D-CNN 확률 평균 (지금 서비스, [5-5](docs/BASELINE_EVALUATION.md))** | **88.6** | **98.0** | **82.4** |
+  | **ExtraTrees + 시간 순서 1D-CNN 확률 평균 (지금 서비스, [5-5](docs/BASELINE_EVALUATION.md))** | **87.9** | **98.0** | **82.4** |
 
   - 같은 30fps 에서 Pose 11n 81.5 · 11s 82.7 · 11m 83.5 — 11m 은 CPU 4배라 11n 유지. 단계 수·떨림 줄이기·TTA·나무 설정·SVM 섞기·시간 자르기 증강은 모두 변동 안
-  - 1D-CNN 을 섞으니 뒤 70.6 → 79.9 (4-fold), A13 50 → 92%. 남은 약한 동작은 A05 밀치기·A04 흔들기·A03 앞차기 (64~72%) → 더 올리려면 데이터(대각선, 약한 동작 추가 촬영)
+  - 1D-CNN 을 섞으니 뒤 70.6 → 78.4 (4-fold), A13 50 → 89%. 남은 약한 동작은 A05 밀치기·A04 흔들기·A03 앞차기 (67~75%) → 더 올리려면 데이터(대각선, 약한 동작 추가 촬영)
 
 ## 실행
 
@@ -205,7 +205,7 @@ python scripts/07_render_overlay.py --subject S04   # YOLO 다시 안 돌림, �
 - [x] 동작 시작·끝 구간 자동 추정 (`segments_auto.csv`) — 사람 확인 남음
 - [x] 동작별 관절 QA → Human QA (PASS 170) → Approved Manifest → 사람 단위 Split·Leakage 검사
 - [x] Sequence 를 고정 길이(30단계)로 맞추고 Random Forest Baseline 학습·오류 분석·Test
-- [x] 시간 순서 모델 (1D-CNN / GRU) 을 같은 Split 으로 비교 (11/24, ExtraTrees + 1D-CNN 을 서비스에: 4-fold 82.4 → 88.6, Test S05 78.4 → 82.4)
+- [x] 시간 순서 모델 (1D-CNN / GRU) 을 같은 Split 으로 비교 (11/24, ExtraTrees + 1D-CNN 을 서비스에: 4-fold 82.4 → 87.9, Test S05 78.4 → 84.3)
 - [ ] VICON 3D 동작을 여러 각도로 2D 투영해 학습 데이터 늘리기 (동작 번호 대응 확인부터)
 - [ ] 동작 구간 끝 사람 확인 (누운 동작)
 - [x] 뒷모습 85개 촬영·학습 (11/23) — 뒤 39% → 73%, 정면·측면 유지

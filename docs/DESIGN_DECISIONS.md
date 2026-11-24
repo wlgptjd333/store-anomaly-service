@@ -236,12 +236,14 @@
 
 - **문제:** ExtraTrees 는 30단계를 펼쳐 단계마다 따로 봐서, 동작 시작이 사람마다 어긋나면 약하다. 14번까지 ExtraTrees 쪽 조정은 모두 변동 안 (4-fold 82.4).
 - **대안:** ① 1D-CNN (시간 방향 필터) ② GRU (순서대로 읽기) ③ ①·② 를 ExtraTrees 와 확률 평균 ④ 그대로
-- **결정:** ExtraTrees + 1D-CNN 확률 평균. S01~S04 4-fold 88.6 ± 1.4 (ExtraTrees 82.4 ± 0.4, 1D-CNN 84.8, GRU 79.7, 셋 다 86.8). 뒤 70.6 → 79.9, 가장 낮은 사람 75.2 → 84.3.
-  고른 뒤 확인: Validation S04 86.9 → 96.1, Test S05 78.4 → 82.4 (뒤 72.5 → 84.3). 자세한 표: [Baseline 성능평가 5-5](BASELINE_EVALUATION.md).
+- **결정:** ExtraTrees + 1D-CNN 확률 평균. S01~S04 4-fold 87.9 ± 0.2 (ExtraTrees 82.4 ± 0.4, 1D-CNN 85.0, GRU 79.7, 셋 다 86.8). 뒤 70.6 → 78.4, 가장 낮은 사람 75.2 → 82.4.
+  고른 뒤 확인: Validation S04 86.9 → 94.8, Test S05 78.4 → 84.3 (뒤 72.5 → 82.4). 자세한 표: [Baseline 성능평가 5-5](BASELINE_EVALUATION.md).
   - 섞는 이유: 두 모델이 틀리는 동작이 다르다 (CNN 은 A13·A02 를 잘 맞히고 A03·A05 는 ExtraTrees 가 잘 맞힘).
   - GRU 는 데이터 255개에서 ExtraTrees 보다 낮았고, 섞어도 1D-CNN 만 섞을 때보다 낮아 뺐다.
   - 서비스에서 PyTorch 는 이미 YOLO 때문에 들어 있어 새 의존성이 없다. 분석 시간 7.3 → 8.1초.
 - **같은 계산 보장:** 모델 코드 `src/temporal_cnn.py` 를 서비스에 그대로 복사(`update_model.sh` 가 같은지 확인), 서비스 `ModelBundle.predict_proba` 가 15번 `predict` 와 같은 순서로 계산.
   1D-CNN 파일은 `torch.load(weights_only=True)` 로 읽히는 값(숫자 텐서·목록)만 저장 — 임의 코드 실행 위험이 없게.
 - **재현:** GPU 계산 순서 고정(cudnn deterministic) → 같은 난수면 같은 결과. 고정 전에는 같은 설정이 4-fold 88.6~89.4, Test 79.7~83.0 으로 흔들렸다.
-- **한계:** 약한 동작이 바뀌었다 — A05 밀치기 64%, A04 흔들기 67%, A03 앞차기 72% (4-fold). 데이터가 5명이라 더 올리려면 촬영이 필요하다.
+  11/24 밤: 21번 실험은 학습 반복문을 따로 복사해 갖고 있어 이 고정이 빠져 있었다 → 서비스와 같은 `src/temporal_cnn.fit_cnn` 하나만 쓰게 합침
+  (GRU 도 `make_model` 로 같은 규칙에 넣음). 합친 뒤 두 번 돌려 같은 값: 4-fold 87.9, Test S05 84.3. 고르는 결론은 같음.
+- **한계:** 약한 동작이 바뀌었다 — A05 밀치기 67%, A04 흔들기 67%, A03 앞차기 75% (4-fold). 데이터가 5명이라 더 올리려면 촬영이 필요하다.

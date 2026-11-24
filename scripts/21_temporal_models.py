@@ -9,7 +9,9 @@
 학습: 정면·측면·뒤 + 좌우 반전 (20번 flip_matrix 와 같은 규칙), 매 epoch 시간 자르기(0~15%)·작은 잡음.
 섞기: ExtraTrees 확률과 신경망 확률의 평균도 본다.
 
-결과 (11/24, cudnn 고정): 4-fold ExtraTrees 82.4 / 1D-CNN 84.8 / GRU 79.7 / ExtraTrees + 1D-CNN 88.6 → 서비스에 씀 (결정 16번)
+결과 (11/24 밤, 서비스와 같은 fit_cnn = cudnn 고정, 두 번 돌려 같은 값):
+  4-fold ExtraTrees 82.4 / 1D-CNN 85.0 / GRU 79.7 / ExtraTrees + 1D-CNN 87.9 → 서비스에 씀 (결정 16번)
+  고른 뒤 확인 Test S05: ExtraTrees 78.4 → ExtraTrees + 1D-CNN 84.3
 실행: .venv/bin/python scripts/21_temporal_models.py [--test]   (GPU 있으면 GPU, 약 4분)
 결과: reports/tables/temporal_models_cv.csv  (--test 면 temporal_models_test.csv 도)
 """
@@ -30,7 +32,7 @@ from torch import nn
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from src.sequence_extras import add_extras  # noqa: E402
-from src.temporal_cnn import CNN, crop_batch, to_seq as _to_seq  # noqa: E402  (서비스와 같은 코드)
+from src.temporal_cnn import fit_cnn, predict_cnn, to_seq as _to_seq  # noqa: E402  (서비스와 같은 코드)
 
 _spec = importlib.util.spec_from_file_location("more", ROOT / "scripts" / "20_more_improvements.py")
 more = importlib.util.module_from_spec(_spec)
@@ -63,33 +65,12 @@ class GRU(nn.Module):
         return self.head(torch.cat([o.mean(1), o.amax(1)], 1))
 
 
-def fit_nn(kind, Xtr, ytr, Xte, seed, epochs=120):
-    torch.manual_seed(seed)
-    np.random.seed(seed)
-    mu = Xtr.mean((0, 2), keepdims=True)
-    sd = Xtr.std((0, 2), keepdims=True) + 1e-6
-    xt = torch.tensor((Xtr - mu) / sd, device=DEV)
-    yt = torch.tensor(ytr, device=DEV)
-    xe = torch.tensor((Xte - mu) / sd, device=DEV)
-    n_cls = int(ytr.max()) + 1
-    model = (CNN if kind == "cnn" else GRU)(xt.shape[1], n_cls).to(DEV)
-    opt = torch.optim.AdamW(model.parameters(), lr=2e-3, weight_decay=1e-2)
-    sched = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=2e-3, total_steps=epochs * ((len(xt) + 31) // 32))
-    loss_fn = nn.CrossEntropyLoss(label_smoothing=0.1)
-    for _ in range(epochs):
-        model.train()
-        perm = torch.randperm(len(xt), device=DEV)
-        for i in range(0, len(xt), 32):
-            idx = perm[i:i + 32]
-            xb = crop_batch(xt[idx])
-            xb = xb + 0.05 * torch.randn_like(xb)
-            opt.zero_grad()
-            loss_fn(model(xb), yt[idx]).backward()
-            opt.step()
-            sched.step()
-    model.eval()
-    with torch.no_grad():
-        return torch.softmax(model(xe), 1).cpu().numpy()
+def fit_nn(kind, Xtr, ytr, Xte, seed):
+    """학습 규칙(정규화·시간 자르기·잡음·120 epoch·cudnn 고정)은 서비스와 같은 src/temporal_cnn.fit_cnn 하나만 쓴다.
+    GRU 는 모델 모양만 바꿔 같은 규칙으로 학습 → 모델 차이만 비교된다."""
+    model, mu, sd = fit_cnn(Xtr, ytr, seed, int(ytr.max()) + 1, device=DEV,
+                            make_model=GRU if kind == "gru" else None)
+    return predict_cnn(model, mu, sd, Xte)
 
 
 def fold_probs(tr: pd.DataFrame, te: pd.DataFrame, classes, seed, kinds):

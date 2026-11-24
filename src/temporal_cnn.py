@@ -12,6 +12,8 @@
 """
 from __future__ import annotations
 
+from typing import Callable
+
 import numpy as np
 import torch
 from torch import nn
@@ -55,8 +57,12 @@ def crop_batch(x: torch.Tensor, cut: float = 0.15) -> torch.Tensor:
 
 
 def fit_cnn(Xseq: np.ndarray, y: np.ndarray, seed: int, n_cls: int, epochs: int = 120,
-            device: str | None = None, width: int = 64):
-    """Xseq (n, C, T), y 정수 0..n_cls-1 → (eval 상태 모델, mu, sd)"""
+            device: str | None = None, width: int = 64,
+            make_model: Callable[[int, int], nn.Module] | None = None):
+    """Xseq (n, C, T), y 정수 0..n_cls-1 → (eval 상태 모델, mu, sd)
+
+    make_model(채널 수, Class 수): 다른 시간 모델을 같은 학습 규칙으로 비교할 때만 (21번 실험의 GRU). 기본은 CNN.
+    """
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
     torch.manual_seed(seed)
     np.random.seed(seed)
@@ -66,7 +72,7 @@ def fit_cnn(Xseq: np.ndarray, y: np.ndarray, seed: int, n_cls: int, epochs: int 
     sd = (Xseq.std((0, 2), keepdims=True) + 1e-6).astype(np.float32)
     xt = torch.tensor((Xseq - mu) / sd, device=device)
     yt = torch.tensor(y, device=device)
-    model = CNN(xt.shape[1], n_cls, w=width).to(device)
+    model = (make_model(xt.shape[1], n_cls) if make_model else CNN(xt.shape[1], n_cls, w=width)).to(device)
     opt = torch.optim.AdamW(model.parameters(), lr=2e-3, weight_decay=1e-2)
     sched = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=2e-3, total_steps=epochs * ((len(xt) + 31) // 32))
     loss_fn = nn.CrossEntropyLoss(label_smoothing=0.1)
