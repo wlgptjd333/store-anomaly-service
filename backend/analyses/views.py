@@ -17,8 +17,7 @@ from rest_framework.response import Response
 from . import jobs
 from .models import AnalysisJob
 from .permissions import IsOwner
-from .serializers import (AnalysisJobCreateSerializer, AnalysisJobSerializer, AnalysisJobStatusSerializer,
-                          AnalysisJobUpdateSerializer)
+from .serializers import AnalysisJobCreateSerializer, AnalysisJobSerializer, AnalysisJobStatusSerializer
 
 
 class AnalysisJobViewSet(viewsets.ModelViewSet):
@@ -26,20 +25,16 @@ class AnalysisJobViewSet(viewsets.ModelViewSet):
     http_method_names = ["get", "post", "patch", "delete", "head", "options"]   # PUT(전체 수정) 막음
 
     def get_queryset(self):
-        qs = AnalysisJob.objects.select_related("user").prefetch_related("predictions")
+        qs = AnalysisJob.objects.with_results()
         # 관리자는 대시보드에서 누른 다른 회원 기록의 상세·상태만 읽을 수 있다. 목록·수정·삭제는 관리자도 본인 것만
         if self.request.user.is_staff and self.action in ("retrieve", "status"):
             return qs
         return qs.filter(user=self.request.user)
 
     def get_serializer_class(self):
-        if self.action == "create":
-            return AnalysisJobCreateSerializer
-        if self.action == "partial_update":
-            return AnalysisJobUpdateSerializer
-        if self.action == "status":
-            return AnalysisJobStatusSerializer
-        return AnalysisJobSerializer
+        # PATCH 도 조회용을 씀 — title·memo 말고는 read_only 라 보내도 무시된다
+        return {"create": AnalysisJobCreateSerializer, "status": AnalysisJobStatusSerializer}.get(
+            self.action, AnalysisJobSerializer)
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -47,11 +42,6 @@ class AnalysisJobViewSet(viewsets.ModelViewSet):
         # 저장 확정 뒤 Celery 등록 (jobs.py — 실시간 장면 저장도 같은 함수)
         job = jobs.submit(lambda task_id: serializer.save(user=request.user, celery_task_id=task_id))
         return Response(jobs.accepted(job), status=status.HTTP_202_ACCEPTED)
-
-    def update(self, request, *args, **kwargs):
-        kwargs["partial"] = True
-        super().update(request, *args, **kwargs)
-        return Response(AnalysisJobSerializer(self.get_object(), context=self.get_serializer_context()).data)
 
     def destroy(self, request, *args, **kwargs):
         job = self.get_object()
@@ -65,4 +55,4 @@ class AnalysisJobViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["get"])
     def status(self, request, pk=None):
-        return Response(AnalysisJobStatusSerializer(self.get_object()).data)
+        return Response(self.get_serializer(self.get_object()).data)

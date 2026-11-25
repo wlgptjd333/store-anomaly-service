@@ -12,6 +12,7 @@ import uuid
 from collections.abc import Callable
 
 from django.db import transaction
+from django.urls import reverse
 from django.utils import timezone
 
 from .models import AnalysisJob
@@ -42,5 +43,5 @@ def submit(save: Callable[[str], AnalysisJob]) -> AnalysisJob:
 
 def accepted(job: AnalysisJob, **extra) -> dict:
     """202 응답 본문 (브라우저는 status_url 을 2초마다 조회)"""
-    return {"id": job.pk, "task_id": job.celery_task_id, "status": job.status,
-            "status_url": f"/api/analyses/{job.pk}/status/", **extra}
+    return {"id": job.pk, "task_id": job.celery_task_id, "status": job.status, "status_display": job.get_status_display(),
+            "status_url": reverse("analyses:analysis-status", args=[job.pk]), **extra}

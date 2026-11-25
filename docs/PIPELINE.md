@@ -159,6 +159,21 @@ stateDiagram-v2
 | `analyses.js` `Init.index` | 처음 열 때 작업 목록 API 를 두 번 부름 (이력 + 진행 중 작업 찾기) | 한 번 받아 둘 다 씀 | — |
 | `dashboard.py` | 집계가 `page_views.dashboard` 안에 모두 있음 | 기간·조건·CSV 가 같은 쿼리 함수를 씀 | `DashboardToolsTests` |
 
+11/25 정리 — 같은 **값**을 여러 곳에 다시 적어 둔 것:
+
+| 한 곳 | 전에는 | 지금 쓰는 곳 | 확인 |
+|---|---|---|---|
+| `ai_service/src/schema.py` (데이터 저장소 `src/schema.py` 복사) | 관절 17개·각도 4개·body40 이름을 `pose_pipeline` 이 따로 정의 (데이터 저장소는 7개 스크립트가 각자) | `pose_pipeline`·`model_loader` 검사, 학습 스크립트 전부. `update_model.sh` 가 두 파일이 같은지 확인 | 예전 이름 목록과 같음, 모델 가중치까지 그대로 재현 |
+| `models.AnalysisJob.FINISHED` · `CAPTURING_MESSAGE` · `is_recording` | 끝난 상태를 `is_finished`·대시보드 '진행 중'이 따로, 녹화 문구를 `tasks.py`·`analyses.js` 가 같은 글자로 | 서버가 `is_recording` 을 보내고 JS 는 그 값만 봄 | 테스트 44개 + 화면 |
+| `AnalysisJobQuerySet.with_results` · `running`, `PredictionQuerySet.graded` | `select_related("user").prefetch_related("predictions")` 5곳, '채점 대상' 조건 2곳 | API·대시보드 표·CSV·Admin·`export_clips` | 같은 테스트 |
+| `actions.action_name` · `category_ko` · `ACTION_NAMES` | `ACTION_BY_ID.get(…, {}).get("name_ko", "")` 4곳 | serializer·대시보드·CSV·화면 json | 같은 테스트 |
+| json_script `page-config` 하나 | `uncertain-below`·`live-config`·`action-names` 3개 + JS 안의 상태 이름표·녹화 문구·조회 횟수(15분) | `analyses.js` `Config` (상태 이름은 API `status_display`, 조회 한도는 `CELERY_TASK_TIME_LIMIT`) | 화면 3곳 콘솔 오류 없음 |
+| `dashboard.js` 분류 색 | 한글 이름("기물 파손")으로 색을 찾음 → 이름을 바꾸면 색이 빠짐 | 분류 코드로 찾고 이름은 서버(`CATEGORY_KO`)가 보냄 | 화면 |
+| `routers/deps.ready_bundle`, `live._session` | '모델 준비 안 됨' 503 검사 2곳, `touch()` 3곳 | `/predict/video`·`/live/start`, 실시간 조회 3개 | E2E |
+| `compose.yaml` `x-shared-limits` | 업로드 용량·불확실 기준·확장자를 Django settings 와 FastAPI `project.json`·`ALLOWED_EXT` 가 따로 | 같은 환경변수를 두 컨테이너에 (FastAPI `load_config` 가 덮어씀) | `docker compose config` + E2E |
+
+따로 둔 것: 카메라 회전·열기 코드는 Django(8초 수집)와 FastAPI(실시간)에 각각 있음 — 다른 컨테이너·다른 라이브러리 묶음이라 공유하면 이미지가 서로 기대게 됨.
+
 ## 7. 문제가 생기면 볼 곳
 
 | 증상 | 먼저 볼 것 |

@@ -15,23 +15,20 @@ import tempfile
 import time
 from pathlib import Path
 
-from fastapi import APIRouter, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 
+from routers.deps import ready_bundle
 from services.action_inference import predict_tracks
 from services.pose_pipeline import VideoReadError, extract_tracks
 
 router = APIRouter(tags=["predictions"])
-ALLOWED_EXT = {".mp4", ".mov", ".avi", ".mkv", ".webm"}
 
 
 @router.post("/predict/video")
-def predict_video(request: Request, file: UploadFile = File(...)):
-    bundle = request.app.state.bundle
-    if not bundle.ready:
-        raise HTTPException(503, f"모델이 준비되지 않았습니다: {bundle.error}")
+def predict_video(request: Request, file: UploadFile = File(...), bundle=Depends(ready_bundle)):
     cfg = bundle.config
     ext = Path(file.filename or "").suffix.lower()
-    if ext not in ALLOWED_EXT:
+    if ext not in cfg["video_extensions"]:
         raise HTTPException(400, f"지원하지 않는 파일 형식입니다 ({ext or '확장자 없음'}). MP4 영상을 보내 주세요.")
 
     started = time.perf_counter()

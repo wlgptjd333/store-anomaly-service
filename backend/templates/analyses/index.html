@@ -26,9 +26,9 @@
         <select name="camera_name" id="camera-select">{% for c in cameras %}<option value="{{ c }}">{{ c }}</option>{% endfor %}</select>
       </label>
       <p id="no-camera" class="error" {% if cameras %}hidden{% endif %}>허용된 카메라가 없습니다. 관리자가 아래 '카메라 주소 관리'에서 등록해야 합니다.</p>
-      <p class="muted">'AI 분석 시작'을 누르면 서버가 카메라에서 {{ capture_seconds|floatformat:0 }}초 동안 화면을 받아 분석하고 기록을 남깁니다.
+      <p class="muted">'AI 분석 시작'을 누르면 서버가 카메라에서 {{ live.capture_seconds|floatformat:0 }}초 동안 화면을 받아 분석하고 기록을 남깁니다.
         앞 작업이 있으면 녹화가 늦게 시작하니, 아래 상태가 <strong>'지금 녹화 중'</strong>으로 바뀐 뒤 동작하세요.
-        <br>추천: 아래 <strong>실시간 보기</strong>로 Skeleton 이 똑바로 잡히는지 보면서 동작하고 <strong>'이 장면 저장'</strong>을 누르면, 화면에 보이던 최근 {{ live_auto.clip_seconds|floatformat:0 }}초가 그대로 기록됩니다.</p>
+        <br>추천: 아래 <strong>실시간 보기</strong>로 Skeleton 이 똑바로 잡히는지 보면서 동작하고 <strong>'이 장면 저장'</strong>을 누르면, 화면에 보이던 최근 {{ live.clip_seconds|floatformat:0 }}초가 그대로 기록됩니다.</p>
     </div>
 
     <div class="row">
@@ -63,7 +63,7 @@
       <p class="muted small" id="live-meta"></p>
 
       <div class="live-save">
-        <button id="live-save-btn" type="button" class="primary">이 장면 저장 (최근 {{ live_auto.clip_seconds|floatformat:0 }}초)</button>
+        <button id="live-save-btn" type="button" class="primary">이 장면 저장 (최근 {{ live.clip_seconds|floatformat:0 }}초)</button>
         <p class="muted small">지금 화면에 보이던 구간을 그대로 저장하고, 업로드와 같은 방법으로 다시 분석해 기록합니다.
           위 '수행한 동작'·'제목'을 함께 저장합니다.</p>
         <label class="inline-check"><input type="checkbox" id="live-auto"> 자동 감지 기록</label>
@@ -72,8 +72,8 @@
             <option value="0.4">40%</option><option value="0.5" selected>50%</option><option value="0.6">60%</option><option value="0.7">70%</option>
           </select>
         </label>
-        <p class="muted small">같은 동작이 {{ live_auto.min_seconds|floatformat:0 }}초 이상, 그동안 Confidence 가 기준 이상으로 이어지면 그 장면을 저장합니다
-          (저장 사이 {{ live_auto.cooldown_seconds|floatformat:0 }}초 간격). 기록에는 <span class="badge">자동 감지</span>로 따로 표시됩니다 —
+        <p class="muted small">같은 동작이 {{ live.min_seconds|floatformat:0 }}초 이상, 그동안 Confidence 가 기준 이상으로 이어지면 그 장면을 저장합니다
+          (저장 사이 {{ live.cooldown_seconds|floatformat:0 }}초 간격). 기록에는 <span class="badge">자동 감지</span>로 따로 표시됩니다 —
           Confidence 가 높을 때만 골라 저장한 것이라 정확도 근거로 쓰면 안 됩니다.</p>
         <p id="live-save-message" class="small" hidden></p>
       </div>
@@ -121,8 +121,7 @@
   </table>
 </section>
 
-{{ uncertain_below|json_script:"uncertain-below" }}
-{{ live_config|json_script:"live-config" }}
+{{ page_config|json_script:"page-config" }}
 {% endblock %}
 {% block scripts %}
 <script src="https://cdn.jsdelivr.net/npm/axios@1.7.7/dist/axios.min.js"></script>

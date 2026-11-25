@@ -50,11 +50,9 @@ def validate_camera_url(url: str) -> None:
 
 def probe(url: str, rotation: int = 0) -> dict:
     """연결 확인: 접속해서 Frame 하나를 받아 본다 (관리자 '연결 확인' 버튼)."""
-    import cv2
+    from .camera_capture import open_camera
     t0 = time.monotonic()
-    cap = cv2.VideoCapture(url)
-    cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 5000)
-    cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 5000)
+    cap = open_camera(url, 5)
     try:
         if not cap.isOpened():
             return {"ok": False, "message": "연결하지 못했습니다. 휴대폰 IP Webcam 앱에서 '서버 시작'을 눌렀는지, 같은 와이파이인지, 주소가 맞는지 확인하세요."}

@@ -5,7 +5,7 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from django.urls import reverse
 from rest_framework import serializers
 
-from .actions import ACTION_BY_ID, CATEGORY_KO
+from .actions import action_name, category_ko
 from .cameras import normalize_camera_url, validate_camera_url
 from .models import AnalysisJob, Camera, PersonPrediction
 
@@ -21,10 +21,10 @@ class PersonPredictionSerializer(serializers.ModelSerializer):
                   "top3", "windows", "predicted_at"]
 
     def get_action_name_ko(self, obj):
-        return ACTION_BY_ID.get(obj.action_id, {}).get("name_ko", "")
+        return action_name(obj.action_id)
 
     def get_category_ko(self, obj):
-        return CATEGORY_KO.get(ACTION_BY_ID.get(obj.action_id, {}).get("category"), "")
+        return category_ko(obj.action_id)
 
 
 class AnalysisJobSerializer(serializers.ModelSerializer):
@@ -43,13 +43,14 @@ class AnalysisJobSerializer(serializers.ModelSerializer):
     can_edit = serializers.SerializerMethodField()
     predictions = PersonPredictionSerializer(many=True, read_only=True)
     is_finished = serializers.BooleanField(read_only=True)
+    is_recording = serializers.BooleanField(read_only=True)
 
     class Meta:
         model = AnalysisJob
         fields = ["id", "title", "memo", "input_type", "input_type_display", "source", "source_display",
                   "live_snapshot", "video_name", "video_url", "download_url", "video_size", "playback_ready",
                   "owner", "can_edit", "camera_name",
-                  "expected_action", "expected_action_display", "status", "status_display", "is_finished",
+                  "expected_action", "expected_action_display", "status", "status_display", "is_finished", "is_recording",
                   "celery_task_id", "error_message", "result_message", "video_seconds", "processing_seconds",
                   "created_at", "started_at", "finished_at", "predictions"]
         read_only_fields = [f for f in fields if f not in {"title", "memo"}]
@@ -135,18 +136,13 @@ class CameraSerializer(serializers.ModelSerializer):
         return url
 
 
-class AnalysisJobUpdateSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = AnalysisJob
-        fields = ["title", "memo"]
-
-
 class AnalysisJobStatusSerializer(serializers.ModelSerializer):
     status_display = serializers.CharField(source="get_status_display", read_only=True)
     is_finished = serializers.BooleanField(read_only=True)
+    is_recording = serializers.BooleanField(read_only=True)
     prediction_count = serializers.IntegerField(source="predictions.count", read_only=True)
 
     class Meta:
         model = AnalysisJob
-        fields = ["id", "status", "status_display", "is_finished", "error_message", "result_message",
+        fields = ["id", "status", "status_display", "is_finished", "is_recording", "error_message", "result_message",
                   "prediction_count", "started_at", "finished_at"]

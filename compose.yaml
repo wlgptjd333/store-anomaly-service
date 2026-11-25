@@ -2,7 +2,14 @@
 # 실행: cp .env.example .env (값 수정) → docker compose up -d --build
 # 서비스끼리는 localhost 가 아니라 서비스 이름(postgres, redis, fastapi)으로 부른다.
 
+# Django 와 FastAPI 가 같이 써야 하는 값 (한쪽만 바뀌면 업로드는 받았는데 AI 가 거절하는 식으로 어긋남)
+x-shared-limits: &shared-limits
+  MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-100}
+  UNCERTAIN_BELOW: ${UNCERTAIN_BELOW:-0.3}
+  VIDEO_EXTENSIONS: ${VIDEO_EXTENSIONS:-.mp4,.mov,.avi,.mkv,.webm}
+
 x-backend-env: &backend-env
+  <<: *shared-limits
   DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?set DJANGO_SECRET_KEY in .env}
   DJANGO_DEBUG: ${DJANGO_DEBUG:-0}
   DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1}
@@ -19,7 +26,6 @@ x-backend-env: &backend-env
   IPWEBCAM_CAMERAS: ${IPWEBCAM_CAMERAS:-}              # 처음 migrate 때 카메라 표로 옮기는 초기값
   CAMERA_ALLOWED_NETWORKS: ${CAMERA_ALLOWED_NETWORKS:-192.168.0.0/16,10.0.0.0/8}
   CAPTURE_SECONDS: ${CAPTURE_SECONDS:-8}
-  MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-100}
 
 services:
   postgres:
@@ -46,6 +52,7 @@ services:
 
   fastapi:
     build: ./ai_service
+    environment: *shared-limits
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,json,sys; sys.exit(0 if json.load(urllib.request.urlopen('http://localhost:8001/health'))['status']=='ok' else 1)"]
       interval: 10s

@@ -9,20 +9,31 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import joblib
 import numpy as np
 
+from src.schema import BODY40
 from src.sequence_extras import add_extras, extra_names
 
 APP_ROOT = Path(__file__).resolve().parents[1]
 CONFIG_PATH = APP_ROOT / "project.json"
 
 
+# Django 와 같이 써야 하는 값은 환경변수가 있으면 그 값 (compose.yaml x-shared-limits 한 곳)
+ENV_OVERRIDES = {"MAX_UPLOAD_MB": ("max_upload_mb", int), "UNCERTAIN_BELOW": ("uncertain_below", float),
+                 "VIDEO_EXTENSIONS": ("video_extensions", lambda v: v.split(","))}
+
+
 def load_config() -> dict:
-    return json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+    cfg = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+    for env, (key, cast) in ENV_OVERRIDES.items():
+        if os.environ.get(env):
+            cfg[key] = cast(os.environ[env])
+    return cfg
 
 
 @dataclass
@@ -72,10 +83,8 @@ class ModelBundle:
 
 def _check(model, columns: list[str], info: dict) -> None:
     steps, frame_feats = info["sequence_steps"], info["frame_features"]
-    from services.pose_pipeline import FRAME_FEATURES
-    missing = [f for f in frame_feats if f not in FRAME_FEATURES]
-    if missing:
-        raise ValueError(f"서비스가 만들지 않는 Frame Feature: {missing}")
+    if frame_feats != BODY40:                             # 학습과 서비스가 같은 40개·같은 순서여야 함
+        raise ValueError("학습 정보의 frame_features 가 src/schema.BODY40 과 다릅니다 (update_model.sh 로 schema.py 맞추기).")
     if model.n_features_in_ != len(columns):
         raise ValueError(f"모델 입력 {model.n_features_in_}개 ≠ Feature 순서 {len(columns)}개")
     # 30단계 × Frame Feature 뒤에 학습 때 덧붙인 Feature(변화량·요약 통계)가 같은 순서로 와야 한다

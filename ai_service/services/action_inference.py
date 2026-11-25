@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from services.pose_pipeline import FRAME_FEATURES, TrackData
+from services.pose_pipeline import TrackData
 
 
 def resample(values: np.ndarray, times: np.ndarray, steps: int) -> np.ndarray:
@@ -36,8 +36,6 @@ def predict_track(track: TrackData, bundle) -> dict:
     steps = info["sequence_steps"]
     times = np.asarray(track.times, dtype=float)
     feats = np.stack(track.features)
-    # 모델이 배운 Frame Feature 만 같은 순서로 (구도 강건 모델은 골반 화면 위치 hip_x_img·hip_y_img 를 뺌 — 26번 실험)
-    feats = feats[:, [FRAME_FEATURES.index(f) for f in info["frame_features"]]]
     valid = np.asarray(track.valid, dtype=bool)
     span = float(times[-1] - times[0]) if len(times) > 1 else 0.0
     quality = {"frames": int(len(times)), "valid_frames": int(valid.sum()),
@@ -46,8 +44,7 @@ def predict_track(track: TrackData, bundle) -> dict:
                "mean_keypoint_conf": round(float(np.mean(track.keypoint_conf)), 3)}
     if span < cfg["min_track_seconds"]:
         return {"skipped": True, "reason": f"화면에 {span:.1f}초만 보여 판단하지 않음", **quality}
-    # 의자·가방 같은 물체를 사람으로 잡은 Track 은 관절 Confidence 평균이 0.1~0.3 (진짜 사람은 학습 영상 최저 0.77,
-    # 서비스 기록 최저 0.64) → 동작을 지어내지 않게 거른다 (docs/PIPELINE.md 6단계)
+    # 의자·가방을 사람으로 잡은 Track 은 관절 Confidence 평균 0.1~0.3 (진짜 사람은 0.64 이상) → 거른다
     min_kp = cfg.get("min_track_keypoint_conf", 0.0)
     if quality["mean_keypoint_conf"] < min_kp:
         return {"skipped": True, "reason": f"관절 Confidence 평균 {quality['mean_keypoint_conf']:.2f} (< {min_kp:.1f}) — "

@@ -35,7 +35,7 @@ class AnalysisJobAdmin(admin.ModelAdmin):
         return ", ".join(f"#{p.track_id} {p.action_id} {p.confidence:.2f}" for p in obj.predictions.all()) or "-"
 
     def get_queryset(self, request):
-        return super().get_queryset(request).select_related("user").prefetch_related("predictions")
+        return super().get_queryset(request).with_results()
 
 
 @admin.register(PersonPrediction)

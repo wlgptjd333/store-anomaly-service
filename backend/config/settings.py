@@ -141,7 +141,8 @@ FASTAPI_TIMEOUT_SECONDS = int(os.environ.get("FASTAPI_TIMEOUT_SECONDS", "600"))
 
 # 업로드 제한
 MAX_UPLOAD_MB = int(os.environ.get("MAX_UPLOAD_MB", "100"))
-ALLOWED_VIDEO_EXTENSIONS = [".mp4", ".mov", ".avi", ".mkv", ".webm"]
+# 아래 셋은 FastAPI(project.json)도 같은 값을 써야 함 → compose 의 x-shared-limits 한 곳에서 두 컨테이너에 같이 넘김
+ALLOWED_VIDEO_EXTENSIONS = os.environ.get("VIDEO_EXTENSIONS", ".mp4,.mov,.avi,.mkv,.webm").split(",")
 # 재생용 사본(H.264) 만들 때 쓰는 프로그램. Docker 이미지에는 apt 로 들어 있고, 없으면 원본만 보여 준다
 FFMPEG_BINARY = os.environ.get("FFMPEG_BINARY", "ffmpeg")
 

@@ -14,9 +14,11 @@ Pose 모델은 세션마다 따로 불러온다. 업로드 분석과 같은 YOLO
 """
 from __future__ import annotations
 
+import bisect
 import threading
 import time
 import uuid
+from collections import deque
 from dataclasses import dataclass
 
 import cv2
@@ -32,6 +34,10 @@ PALETTE = [(255, 140, 0), (60, 200, 60), (40, 40, 230), (230, 60, 200), (0, 200,
            (140, 80, 255), (80, 160, 255)]
 
 
+# predict_track 결과 중 실시간 화면이 쓰는 것 (구간별 windows 등은 저장 분석에서만)
+LIVE_KEYS = ("track_seconds", "action_id", "action_label", "action_name_ko", "category", "confidence",
+             "uncertain", "top3", "valid_frames")
+
 class LiveBusy(Exception):
     """다른 카메라로 실시간 보기가 이미 돌고 있음 (CPU 하나로 두 개를 돌리면 둘 다 느려진다)"""
 
@@ -43,9 +49,7 @@ class _Track(TrackData):
     last_seen: float = 0.0
 
     def trim(self, keep_from: float) -> None:
-        i = 0
-        while i < len(self.times) and self.times[i] < keep_from:
-            i += 1
+        i = bisect.bisect_left(self.times, keep_from)      # times 는 늘 오름차순
         if i:
             for lst in (self.times, self.features, self.valid, self.keypoint_conf):
                 del lst[:i]
@@ -70,7 +74,7 @@ class LiveSession:
         self.id = str(uuid.uuid4())
         self.camera, self.url, self.rotation = camera, url, rotation
         # '이 장면 저장'용: 최근 몇 초의 원본 Frame(회전 후, Skeleton 없음)을 JPEG 로 들고 있는다
-        self._clip: list[tuple[float, bytes]] = []
+        self._clip: deque[tuple[float, bytes]] = deque()
         self._clip_lock = threading.Lock()
         self._reset = False
         self.bundle, self.cfg, self.device = bundle, bundle.config, device
@@ -155,7 +159,7 @@ class LiveSession:
                     with self._clip_lock:
                         self._clip.append((t, buf.tobytes()))
                         while self._clip and self._clip[0][0] < t - keep:
-                            self._clip.pop(0)
+                            self._clip.popleft()
         finally:
             cap.release()
 
@@ -272,12 +276,8 @@ class LiveSession:
                 streak_min = min(prev["streak_min_confidence"], r["confidence"])
             else:
                 streak, streak_min = 0.0, r["confidence"]
-            self.results[tid] = {"status": "ok", "seen_seconds": seen, "track_seconds": r["track_seconds"],
-                                 "action_id": r["action_id"], "action_label": r["action_label"],
-                                 "action_name_ko": r["action_name_ko"], "category": r["category"],
-                                 "confidence": r["confidence"], "uncertain": r["uncertain"], "top3": r["top3"],
-                                 "valid_frames": r["valid_frames"], "streak_seconds": round(streak, 1),
-                                 "streak_min_confidence": round(streak_min, 4)}
+            self.results[tid] = {"status": "ok", "seen_seconds": seen, **{k: r[k] for k in LIVE_KEYS},
+                                 "streak_seconds": round(streak, 1), "streak_min_confidence": round(streak_min, 4)}
 
     def _draw(self, frame: np.ndarray, people: list[Person]) -> None:
         kp_min = self.cfg["keypoint_confidence"]

@@ -23,6 +23,14 @@ def rotate(frame, degrees: int):
     return cv2.rotate(frame, code) if code is not None else frame
 
 
+def open_camera(url: str, open_timeout: float):
+    """IP Webcam 스트림 열기 (8초 수집·관리자 연결 확인이 같이 씀). 읽기가 5초 넘게 멈추면 실패로 본다."""
+    cap = cv2.VideoCapture(url)
+    cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, open_timeout * 1000)
+    cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 5000)
+    return cap
+
+
 def capture_clip(camera_name: str, out_path: Path, seconds: float | None = None) -> dict:
     from .models import Camera
     cam = Camera.objects.filter(name=camera_name, enabled=True).first()
@@ -30,9 +38,7 @@ def capture_clip(camera_name: str, out_path: Path, seconds: float | None = None)
         raise CaptureError(f"허용되지 않은 카메라입니다: {camera_name}")
     url, degrees = cam.url, cam.rotation
     seconds = seconds or settings.CAPTURE_SECONDS
-    cap = cv2.VideoCapture(url)
-    cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, settings.CAPTURE_CONNECT_TIMEOUT_SECONDS * 1000)
-    cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 5000)
+    cap = open_camera(url, settings.CAPTURE_CONNECT_TIMEOUT_SECONDS)
     if not cap.isOpened():
         raise CaptureError(f"카메라 '{camera_name}'에 연결하지 못했습니다. 휴대폰 IP Webcam 앱이 켜져 있고 같은 네트워크인지 확인하세요.")
     ok, frame = cap.read()

@@ -16,7 +16,6 @@ from .playback import make_playback
 from .services import InferenceError, predict_video
 
 log = logging.getLogger(__name__)
-CAPTURING = "카메라 녹화 중"            # analyses.js 가 이 문구를 보고 '지금 동작하세요'를 띄운다
 ANALYZING = "녹화 끝, AI 분석 중"
 PLAYBACK = "결과 저장 중 (재생용 영상 만드는 중)"
 
@@ -49,7 +48,7 @@ def _acquire_video(job: AnalysisJob) -> None:
     if job.input_type != AnalysisJob.InputType.IPWEBCAM or job.video:
         return
     # 대기열에서 기다린 만큼 버튼보다 늦게 시작할 수 있어 '지금 녹화 중'을 따로 알린다
-    _step(job, CAPTURING)
+    _step(job, AnalysisJob.CAPTURING_MESSAGE)
     rel = Path("videos") / "ipwebcam" / f"job{job.pk}_{timezone.now():%Y%m%d_%H%M%S}.mp4"
     capture_clip(job.camera_name, Path(settings.MEDIA_ROOT) / rel)
     job.video.name = str(rel)

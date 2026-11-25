@@ -218,11 +218,6 @@
     "back"
   ],
   "flip_augmentation": true,
-  "camera_augmentation": {
-    "view_copies": 0,
-    "crop_copies": 0,
-    "code": "scripts/26_camera_robust.py view_aug, scripts/24_geo_augment.py crop"
-  },
   "extra_training_clips": 5,
   "evaluation_train_S01_S03": {
     "validation_S04": {
@@ -243,5 +238,5 @@
     }
   },
   "sklearn_version": "1.9.1",
-  "created_at": "2026-11-24T19:14:14"
+  "created_at": "2026-11-25T09:41:35"
 }

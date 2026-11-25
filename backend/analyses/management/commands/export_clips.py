@@ -57,7 +57,7 @@ class Command(BaseCommand):
 
     def handle(self, *args, **opts):
         qs = (AnalysisJob.objects.filter(**SOURCES[opts["source"]]).exclude(video="")
-              .select_related("user").prefetch_related("predictions").order_by("id"))
+              .with_results().order_by("id"))
         if not opts["include_failed"]:
             qs = qs.filter(status=AnalysisJob.Status.SUCCESS)
         if opts["labeled_only"]:

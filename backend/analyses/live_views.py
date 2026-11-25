@@ -29,7 +29,7 @@ from rest_framework.permissions import SAFE_METHODS, BasePermission, IsAuthentic
 from rest_framework.response import Response
 
 from . import jobs, services
-from .actions import ACTION_BY_ID
+from .actions import ACTION_NAMES
 from .cameras import probe
 from .models import AnalysisJob, Camera
 from .serializers import CameraPublicSerializer, CameraSerializer
@@ -107,7 +107,7 @@ def live_save(request, sid):
     """
     auto = str(request.data.get("auto", "")).lower() in {"1", "true", "yes"}
     expected = request.data.get("expected_action", "") or ""
-    if expected and expected not in ACTION_BY_ID:
+    if expected and expected not in ACTION_NAMES:
         return Response({"expected_action": ["알 수 없는 동작입니다."]}, status=400)
     try:
         state = services.live_state(str(sid))

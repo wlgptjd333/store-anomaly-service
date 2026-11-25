@@ -28,7 +28,14 @@ ACTIONS = [
 
 CATEGORY_KO = {"property_damage": "기물 파손", "violence": "폭력", "loitering": "장시간 머묾",
                "theft_suspect": "도난 의심", "emergency": "응급"}
-ACTION_IDS = [a[0] for a in ACTIONS]
 ACTION_CHOICES = [(a[0], f"{a[0]} {a[2]}") for a in ACTIONS]
 ACTION_BY_ID = {a[0]: {"id": a[0], "label": a[1], "name_ko": a[2], "category": a[3], "repo_id": a[4]} for a in ACTIONS}
-REPO_TO_UNIFIED = {a[4]: a[0] for a in ACTIONS}
+ACTION_NAMES = {a[0]: a[2] for a in ACTIONS}                      # 번호 → 한글 이름 (화면 json·CSV·대시보드)
+
+
+def action_name(action_id: str) -> str:
+    return ACTION_NAMES.get(action_id, "")
+
+
+def category_ko(action_id: str) -> str:
+    return CATEGORY_KO.get(ACTION_BY_ID.get(action_id, {}).get("category"), "")

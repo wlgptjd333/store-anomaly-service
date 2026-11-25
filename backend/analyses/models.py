@@ -32,6 +32,21 @@ class Camera(models.Model):
         super().clean_fields(exclude)
 
 
+class AnalysisJobQuerySet(models.QuerySet):
+    def with_results(self):
+        """목록·상세·대시보드 표·CSV 공통: 회원 + 사람별 예측을 미리 (N+1 방지)"""
+        return self.select_related("user").prefetch_related("predictions")
+
+    def running(self):
+        return self.exclude(status__in=AnalysisJob.FINISHED)
+
+
+class PredictionQuerySet(models.QuerySet):
+    def graded(self):
+        """'수행한 동작과 일치' 계산 대상 — 사용자가 동작을 골랐고, 자동 감지(Confidence 높은 장면만 저장 = 선택 편향)가 아닌 것"""
+        return self.exclude(job__expected_action="").exclude(job__source=AnalysisJob.Source.LIVE_AUTO)
+
+
 class AnalysisJob(models.Model):
     """분석 요청 한 건. 영상 파일 자체는 Media 폴더에 두고 DB 에는 경로만 저장한다."""
 
@@ -50,6 +65,11 @@ class AnalysisJob(models.Model):
         CAPTURE = "CAPTURE", "8초 수집"
         LIVE = "LIVE", "실시간 장면 저장"
         LIVE_AUTO = "LIVE_AUTO", "자동 감지"
+
+    FINISHED = (Status.SUCCESS, Status.FAILURE)
+    CAPTURING_MESSAGE = "카메라 녹화 중"      # 8초 수집 동안 result_message (tasks) → is_recording → 화면 '지금 동작하세요'
+
+    objects = AnalysisJobQuerySet.as_manager()
 
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="analysis_jobs")
     title = models.CharField("제목", max_length=100, blank=True)
@@ -83,7 +103,11 @@ class AnalysisJob(models.Model):
 
     @property
     def is_finished(self) -> bool:
-        return self.status in {self.Status.SUCCESS, self.Status.FAILURE}
+        return self.status in self.FINISHED
+
+    @property
+    def is_recording(self) -> bool:
+        return self.status == self.Status.STARTED and self.result_message == self.CAPTURING_MESSAGE
 
 
 class PersonPrediction(models.Model):
@@ -102,6 +126,8 @@ class PersonPrediction(models.Model):
     top3 = models.JSONField("상위 3개", default=list, blank=True)
     windows = models.JSONField("창별 결과", default=list, blank=True)
     predicted_at = models.DateTimeField("예측 시각", auto_now_add=True)
+
+    objects = PredictionQuerySet.as_manager()
 
     class Meta:
         ordering = ["job", "track_id"]

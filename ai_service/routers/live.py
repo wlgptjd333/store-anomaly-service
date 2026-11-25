@@ -12,10 +12,11 @@ from __future__ import annotations
 
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
 
+from routers.deps import ready_bundle
 from services.live_session import LiveBusy
 
 router = APIRouter(prefix="/live", tags=["live"])
@@ -28,17 +29,16 @@ class LiveStart(BaseModel):
 
 
 def _session(request: Request, sid: str):
+    """세션 찾기 + '아직 보고 있음' 표시 (일정 시간 아무도 안 보면 live_session 이 스스로 멈춤)"""
     s = request.app.state.live.get(sid)
     if s is None:
         raise HTTPException(404, "실시간 세션이 없습니다. 다시 시작하세요.")
+    s.touch()
     return s
 
 
 @router.post("/start")
-def start(request: Request, body: LiveStart):
-    bundle = request.app.state.bundle
-    if not bundle.ready:
-        raise HTTPException(503, f"모델이 준비되지 않았습니다: {bundle.error}")
+def start(request: Request, body: LiveStart, bundle=Depends(ready_bundle)):
     try:
         s = request.app.state.live.start(body.camera, body.url, bundle, request.app.state.device, body.rotation)
     except LiveBusy as exc:
@@ -49,14 +49,12 @@ def start(request: Request, body: LiveStart):
 @router.get("/{sid}")
 def state(request: Request, sid: str):
     s = _session(request, sid)
-    s.touch()
     return s.snapshot()
 
 
 @router.get("/{sid}/stream")
 def stream(request: Request, sid: str):
     s = _session(request, sid)
-    s.touch()
     return StreamingResponse(s.mjpeg(), media_type="multipart/x-mixed-replace; boundary=frame",
                              headers={"Cache-Control": "no-store"})
 
@@ -65,7 +63,6 @@ def stream(request: Request, sid: str):
 def clip(request: Request, sid: str, seconds: float = Query(8.0, ge=2.0, le=10.0)):
     """최근 seconds 초 원본 영상(MP4). Django 가 받아 저장하고 /predict/video 와 같은 분석을 돌린다."""
     s = _session(request, sid)
-    s.touch()
     data, span, n = s.clip_mp4(seconds)
     if not data:
         raise HTTPException(409, f"아직 영상이 충분히 쌓이지 않았습니다 ({span:.1f}초). 잠시 후 다시 누르세요.")

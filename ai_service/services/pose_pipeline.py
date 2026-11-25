@@ -18,12 +18,8 @@ import cv2
 import numpy as np
 
 from src.feature_utils import normalize_by_shoulder_width, selected_joint_angles
-from src.pose_utils import COCO_KEYPOINT_NAMES
+from src.schema import ANGLES, BODY40          # 학습과 같은 파일 (데이터 저장소 src/schema.py 복사본)
 from src.team_feature_utils import normalize_by_body_scale, team03_features
-
-ANGLE_NAMES = ["left_elbow_angle", "right_elbow_angle", "left_knee_angle", "right_knee_angle"]
-FRAME_FEATURES = ([f"bn_{k}_{a}" for k in COCO_KEYPOINT_NAMES for a in "xy"]
-                  + ANGLE_NAMES + ["hip_x_img", "hip_y_img"])
 
 # YOLO 모델·Tracker 는 요청끼리 공유하면 Track ID 가 섞이므로 영상 한 건씩 처리한다
 _TRACK_LOCK = threading.Lock()
@@ -75,7 +71,7 @@ class VideoResult:
 
 def frame_features(xy: np.ndarray, conf: np.ndarray, img_w: int, img_h: int, kp_conf: float):
     """한 사람의 Keypoint 17×2(px) → (40개 값, 유효 여부)"""
-    values = np.full(len(FRAME_FEATURES), np.nan, dtype=np.float64)
+    values = np.full(len(BODY40), np.nan, dtype=np.float64)
     try:
         body_norm, _, _ = normalize_by_body_scale(xy)
         body_ok = bool(np.all(np.isfinite(body_norm)))
@@ -86,7 +82,7 @@ def frame_features(xy: np.ndarray, conf: np.ndarray, img_w: int, img_h: int, kp_
         angles = selected_joint_angles(xy)
     except (ValueError, ZeroDivisionError, FloatingPointError):
         return values, False
-    angle_vals = [float(angles[n]) for n in ANGLE_NAMES]
+    angle_vals = [float(angles[n]) for n in ANGLES]
     feature_ok = bool(np.all(np.isfinite(shoulder_norm)) and np.all(np.isfinite(angle_vals)))
     team = team03_features(xy, conf, img_w, img_h, kp_conf)
     values[:34] = np.round(body_norm.reshape(-1), 6)

@@ -18,7 +18,7 @@ from django.db.models.functions import TruncDate
 from django.http import HttpResponse
 from django.utils import timezone
 
-from .actions import ACTION_BY_ID, ACTIONS, CATEGORY_KO
+from .actions import ACTIONS, CATEGORY_KO, action_name
 from .models import AnalysisJob, PersonPrediction
 
 PERIODS = [("all", "전체"), ("today", "오늘"), ("7d", "최근 7일"), ("30d", "최근 30일")]
@@ -82,7 +82,7 @@ def summary(jobs):
     n_pred = preds.count()
     n_unc = preds.filter(uncertain=True).count()
     avg = jobs.filter(status=AnalysisJob.Status.SUCCESS).aggregate(proc=Avg("processing_seconds"), video=Avg("video_seconds"))
-    graded = preds.exclude(job__expected_action="").exclude(job__source=AnalysisJob.Source.LIVE_AUTO)
+    graded = preds.graded()
     n_graded = graded.count()
     n_match = graded.filter(action_id=F("job__expected_action")).count()
     return {
@@ -94,7 +94,7 @@ def summary(jobs):
         "avg_processing": round(avg["proc"], 1) if avg["proc"] is not None else None,
         "avg_video": round(avg["video"], 1) if avg["video"] is not None else None,
         "graded": n_graded, "matched": n_match, "match_pct": _pct(n_match, n_graded),
-        "running": AnalysisJob.objects.filter(status__in=[AnalysisJob.Status.PENDING, AnalysisJob.Status.STARTED]).count(),
+        "running": AnalysisJob.objects.running().count(),
         "with_video": jobs.exclude(video="").count(),
     }
 
@@ -104,7 +104,7 @@ def chart_data(jobs, period: str):
     # ① 동작별 예측 건수 — 한 번도 안 나온 동작도 0 으로
     by_action = dict(preds.values_list("action_id").annotate(n=Count("id")))
     uncertain = dict(preds.filter(uncertain=True).values_list("action_id").annotate(n=Count("id")))
-    actions = [{"id": a[0], "name_ko": a[2], "category": CATEGORY_KO[a[3]],
+    actions = [{"id": a[0], "name_ko": a[2], "category": a[3], "category_ko": CATEGORY_KO[a[3]],
                 "count": by_action.get(a[0], 0), "uncertain": uncertain.get(a[0], 0)} for a in ACTIONS]
     # ② 작업 상태별
     by_status = dict(jobs.values_list("status").annotate(n=Count("id")))
@@ -113,7 +113,8 @@ def chart_data(jobs, period: str):
     by_input = {r["input_type"]: r for r in jobs.values("input_type").annotate(n=Count("id"), avg_sec=Avg("processing_seconds"))}
     inputs = [{"type": t.value, "label": t.label, "count": by_input.get(t.value, {}).get("n", 0),
                "avg_seconds": round(by_input.get(t.value, {}).get("avg_sec") or 0, 2)} for t in AnalysisJob.InputType]
-    return {"actions": actions, "statuses": statuses, "inputs": inputs, "trend": trend(jobs, period)}
+    return {"actions": actions, "categories": CATEGORY_KO, "statuses": statuses, "inputs": inputs,
+            "trend": trend(jobs, period)}
 
 
 def trend(jobs, period: str):
@@ -138,16 +139,14 @@ def trend(jobs, period: str):
 
 def confusions(jobs, limit: int = 6):
     """수행한 동작(사용자 선택) → 예측이 달랐던 쌍. 어떤 동작끼리 헷갈리는지 보는 참고용."""
-    rows = (PersonPrediction.objects.filter(job__in=jobs).exclude(job__expected_action="")
-            .exclude(job__source=AnalysisJob.Source.LIVE_AUTO).exclude(action_id=F("job__expected_action"))
+    rows = (PersonPrediction.objects.filter(job__in=jobs).graded().exclude(action_id=F("job__expected_action"))
             .values("job__expected_action", "action_id").annotate(n=Count("id")).order_by("-n")[:limit])
-    name = lambda a: ACTION_BY_ID.get(a, {}).get("name_ko", "")  # noqa: E731
-    return [{"expected": r["job__expected_action"], "expected_ko": name(r["job__expected_action"]),
-             "predicted": r["action_id"], "predicted_ko": name(r["action_id"]), "count": r["n"]} for r in rows]
+    return [{"expected": r["job__expected_action"], "expected_ko": action_name(r["job__expected_action"]),
+             "predicted": r["action_id"], "predicted_ko": action_name(r["action_id"]), "count": r["n"]} for r in rows]
 
 
 def page_of(jobs, params):
-    qs = jobs.select_related("user").prefetch_related("predictions").order_by("-created_at")
+    qs = jobs.with_results().order_by("-created_at")
     page = Paginator(qs, PAGE_SIZE).get_page(params.get("page"))
     keep = params.copy()
     keep.pop("page", None)
@@ -173,14 +172,14 @@ def csv_response(jobs):
     w = csv.writer(resp)
     w.writerow(CSV_HEADER)
     local = lambda t: timezone.localtime(t).strftime("%Y-%m-%d %H:%M:%S") if t else ""  # noqa: E731
-    for j in jobs.select_related("user").prefetch_related("predictions").order_by("-created_at"):
+    for j in jobs.with_results().order_by("-created_at"):
         preds = list(j.predictions.all())
         match = ""
         if j.expected_action and preds:
             match = "일치" if any(p.action_id == j.expected_action for p in preds) else "불일치"
         w.writerow([j.pk, _cell(j.user.username), _cell(j.title), j.get_input_type_display(),
                     j.get_source_display() if j.source else "", _cell(j.camera_name), j.get_status_display(), j.expected_action, len(preds),
-                    " / ".join(f"#{p.track_id} {p.action_id} {ACTION_BY_ID.get(p.action_id, {}).get('name_ko', '')} "
+                    " / ".join(f"#{p.track_id} {p.action_id} {action_name(p.action_id)} "
                                f"{p.confidence:.2f}" for p in preds),
                     "예" if any(p.uncertain for p in preds) else "", match, j.video_seconds or "",
                     j.processing_seconds or "", local(j.created_at), local(j.finished_at), _cell(j.error_message), _cell(j.memo)])

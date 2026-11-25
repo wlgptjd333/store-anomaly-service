@@ -8,31 +8,26 @@ from django.http import Http404
 from django.shortcuts import get_object_or_404, render
 
 from . import dashboard as dash
-from .actions import ACTIONS
+from .actions import ACTION_NAMES, ACTIONS
 from .cameras import allowed_networks_text
 from .models import AnalysisJob, Camera
 from .playback import ranged_file_response
 from .services import health
 
 
-def _live_config():
-    return {"min_confidence": settings.LIVE_AUTO_MIN_CONFIDENCE, "min_seconds": settings.LIVE_AUTO_MIN_SECONDS,
+def _page_context():
+    live = {"min_confidence": settings.LIVE_AUTO_MIN_CONFIDENCE, "min_seconds": settings.LIVE_AUTO_MIN_SECONDS,
             "cooldown_seconds": settings.LIVE_AUTO_COOLDOWN_SECONDS, "clip_seconds": settings.LIVE_CLIP_SECONDS,
             "capture_seconds": settings.CAPTURE_SECONDS}
-
-
-def _page_context():
-    live = _live_config()
     return {
         "actions": ACTIONS,
-        "action_names": {a[0]: a[2] for a in ACTIONS},             # 구간별 예측에 이름 붙이기 (json_script)
         "cameras": list(Camera.objects.filter(enabled=True).values_list("name", flat=True)),  # 이름만
         "camera_networks": allowed_networks_text(),
-        "live_auto": live,                      # Template 문구용
-        "live_config": live,                    # analyses.js 가 읽는 같은 값 (json_script)
-        "capture_seconds": settings.CAPTURE_SECONDS,
-        "uncertain_below": settings.UNCERTAIN_BELOW,
+        "live": live,                                               # 화면 문구
         "max_upload_mb": settings.MAX_UPLOAD_MB,
+        # analyses.js 가 읽는 값 한 묶음 (json_script "page-config") — JS 에 같은 숫자를 다시 적지 않게
+        "page_config": {"live": live, "uncertain_below": settings.UNCERTAIN_BELOW, "action_names": ACTION_NAMES,
+                        "poll_limit_seconds": settings.CELERY_TASK_TIME_LIMIT},
     }
 
 

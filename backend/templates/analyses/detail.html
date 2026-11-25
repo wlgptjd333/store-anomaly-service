@@ -32,8 +32,7 @@
 {% elif job.memo %}
 <section class="card"><h2>메모</h2><p>{{ job.memo|linebreaksbr }}</p></section>
 {% endif %}
-{{ uncertain_below|json_script:"uncertain-below" }}
-{{ action_names|json_script:"action-names" }}
+{{ page_config|json_script:"page-config" }}
 {% endblock %}
 {% block scripts %}
 <script src="https://cdn.jsdelivr.net/npm/axios@1.7.7/dist/axios.min.js"></script>

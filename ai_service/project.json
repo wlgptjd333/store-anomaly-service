@@ -17,6 +17,7 @@
   "uncertain_below": 0.3,
   "max_video_seconds": 60,
   "max_upload_mb": 100,
+  "video_extensions": [".mp4", ".mov", ".avi", ".mkv", ".webm"],
   "live_predict_every_seconds": 1.0,
   "live_connect_timeout_seconds": 10,
   "live_idle_seconds": 20,

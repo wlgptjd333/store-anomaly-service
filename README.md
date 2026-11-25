@@ -467,7 +467,7 @@ store-anomaly-service/
 │   └── Dockerfile          python:3.12-slim + ffmpeg
 ├── ai_service/             FastAPI
 │   ├── main.py routers/ services/   predictions(영상 1건) · live(실시간 보기 세션)
-│   ├── src/                데이터 저장소(unmanned-store-anomaly)에서 복사: pose_utils · feature_utils · team_feature_utils · sequence_extras · temporal_cnn
+│   ├── src/                데이터 저장소(unmanned-store-anomaly)에서 복사: schema · pose_utils · feature_utils · team_feature_utils · sequence_extras · temporal_cnn
 │   ├── models/             Joblib · Feature 순서 · 학습 정보
 │   └── Dockerfile
 ├── scripts/                check.sh (린트·테스트 한 번에) · e2e_check.py (Docker 통합 확인) · capture_screens.py (README 캡처) · update_model.sh (모델 교체)

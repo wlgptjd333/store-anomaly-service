@@ -40,64 +40,70 @@
       if (data.detail || data.message) return data.detail || data.message;
       return Object.values(data).flat().join(" ");
     },
-    flash(sel, text, ok) {                        // 성공(초록)·오류(빨강) 한 줄 안내
+    flash(sel, text, tone = "error") {            // 한 줄 안내: ok(초록) · error(빨강) · info(회색). 빈 글이면 숨김
       const el = Util.$(sel);
       if (!el) return;
       el.textContent = text || "";
-      el.className = `small ${ok ? "ok-text" : "error"}`;
+      el.classList.remove("ok-text", "error", "muted");
+      el.classList.add({ ok: "ok-text", error: "error", info: "muted" }[tone]);
       el.hidden = !text;
     },
   };
 
   // ── Config ──
+  // 서버 설정값은 page_views._page_context 의 json_script "page-config" 한 곳에서 (상태 이름은 API 의 status_display)
+  const page = Util.json("page-config", {});
+  const POLL_MS = 2000;
   const Config = {
-    api: "/api/analyses/",
-    pollMs: 2000,
-    pollLimit: 450,                       // 2초 × 450 = 15분 (Celery 시간 제한과 같음)
-    capturing: "카메라 녹화 중",           // tasks.py CAPTURING 과 같은 문구
-    live: () => Util.json("live-config", { min_seconds: 3, cooldown_seconds: 15, capture_seconds: 8 }),
-    uncertainBelow: () => Util.json("uncertain-below", 0.3),
-    actionNames: () => Util.json("action-names", {}),
-    statusKo: { PENDING: "대기", STARTED: "처리 중", SUCCESS: "완료", FAILURE: "실패" },
+    api: { analyses: "/api/analyses/", cameras: "/api/cameras/", live: "/api/live/" },
+    pollMs: POLL_MS,
+    pollLimit: Math.ceil(((page.poll_limit_seconds ?? 900) * 1000) / POLL_MS),   // Celery 시간 제한까지만 조회
+    live: page.live ?? { min_seconds: 3, cooldown_seconds: 15, capture_seconds: 8 },
+    uncertainBelow: page.uncertain_below ?? 0.3,
+    actionNames: page.action_names ?? {},
     preview: { longSeconds: 60, shortSeconds: 3, cpuFactor: 2.5 },   // 미리보기 안내 기준 (Docker CPU 실측: 영상 1초 ≈ 처리 2~2.5초)
   };
 
   // ── Data (DRF API) ──
   const http = axios.create({ headers: { "X-CSRFToken": Util.csrf() } });
+  const Api = Config.api;
   const Data = {
-    create: (formData, onUploadProgress) => http.post(Config.api, formData, { onUploadProgress }).then((r) => r.data),
-    list: () => http.get(Config.api).then((r) => r.data.results ?? r.data),
-    detail: (id) => http.get(`${Config.api}${id}/`).then((r) => r.data),
-    status: (id) => http.get(`${Config.api}${id}/status/`).then((r) => r.data),
-    update: (id, body) => http.patch(`${Config.api}${id}/`, body).then((r) => r.data),
-    remove: (id) => http.delete(`${Config.api}${id}/`),
+    create: (formData, onUploadProgress) => http.post(Api.analyses, formData, { onUploadProgress }).then((r) => r.data),
+    list: () => http.get(Api.analyses).then((r) => r.data.results ?? r.data),
+    detail: (id) => http.get(`${Api.analyses}${id}/`).then((r) => r.data),
+    status: (id) => http.get(`${Api.analyses}${id}/status/`).then((r) => r.data),
+    update: (id, body) => http.patch(`${Api.analyses}${id}/`, body).then((r) => r.data),
+    remove: (id) => http.delete(`${Api.analyses}${id}/`),
     // 카메라 (일반 사용자는 이름만, 관리자는 주소까지)
-    cameras: () => http.get("/api/cameras/").then((r) => r.data),
-    addCamera: (body) => http.post("/api/cameras/", body).then((r) => r.data),
-    saveCamera: (id, body) => http.patch(`/api/cameras/${id}/`, body).then((r) => r.data),
-    deleteCamera: (id) => http.delete(`/api/cameras/${id}/`),
-    checkCamera: (id) => http.post(`/api/cameras/${id}/check/`).then((r) => r.data),
+    cameras: () => http.get(Api.cameras).then((r) => r.data),
+    addCamera: (body) => http.post(Api.cameras, body).then((r) => r.data),
+    saveCamera: (id, body) => http.patch(`${Api.cameras}${id}/`, body).then((r) => r.data),
+    deleteCamera: (id) => http.delete(`${Api.cameras}${id}/`),
+    checkCamera: (id) => http.post(`${Api.cameras}${id}/check/`).then((r) => r.data),
     // 실시간 보기 (보기용, DB 에 남기지 않음)
-    liveStart: (camera_name) => http.post("/api/live/", { camera_name }).then((r) => r.data),
-    liveState: (sid) => http.get(`/api/live/${sid}/`).then((r) => r.data),
-    liveStop: (sid) => http.delete(`/api/live/${sid}/`),
-    liveSave: (sid, body) => http.post(`/api/live/${sid}/save/`, body).then((r) => r.data),
+    liveStart: (camera_name) => http.post(Api.live, { camera_name }).then((r) => r.data),
+    liveState: (sid) => http.get(`${Api.live}${sid}/`).then((r) => r.data),
+    liveStop: (sid) => http.delete(`${Api.live}${sid}/`),
+    liveSave: (sid, body) => http.post(`${Api.live}${sid}/save/`, body).then((r) => r.data),
   };
 
   // ── View ──
   const View = {
-    badge(status) {
-      return `<span class="badge s-${status}">${Config.statusKo[status] ?? status}</span>`;
+    badge(job) {                                  // 상태 이름은 서버(models.Status)가 보낸 status_display
+      return `<span class="badge s-${job.status}">${Util.esc(job.status_display ?? job.status)}</span>`;
+    },
+    uncertainBadge(p) {
+      return p.uncertain ? '<span class="badge warn">판단 불확실</span>' : "";
     },
     actionText(a, prob = a.confidence) {          // "A001 키오스크 두드리기 77%"
       return `${Util.esc(a.action_id)} ${Util.esc(a.action_name_ko)} ${Util.pct(prob)}`;
     },
     confidenceCell(p) {
       return `<div class="bar"><span style="width:${(p.confidence * 100).toFixed(0)}%"></span></div>${Util.pct(p.confidence)}`
-        + (p.uncertain ? '<br><span class="badge warn">판단 불확실</span>' : "");
+        + (p.uncertain ? `<br>${View.uncertainBadge(p)}` : "");
     },
     predictionLine(p) {
-      return `#${p.track_id} ${View.actionText(p)}${p.uncertain ? ' <span class="badge warn">판단 불확실</span>' : ""}`;
+      return `#${p.track_id} ${View.actionText(p)} ${View.uncertainBadge(p)}`;
     },
     resultTable(job) {
       if (job.status === "FAILURE") return `<p class="error">실패 사유: ${Util.esc(job.error_message)}</p>`;
@@ -120,7 +126,7 @@
       return `<table class="table">
         <thead><tr><th>Track</th><th>예측 동작</th><th>Confidence</th><th>수행한 동작과</th><th>상위 3개</th><th>입력 품질</th></tr></thead>
         <tbody>${rows}</tbody></table>
-        <p class="muted small">Confidence ${Util.pct(Config.uncertainBelow())} 미만은 '판단 불확실'로 표시합니다. 17개 동작 중 하나를 고르는 모델이라, 학습하지 않은 동작에도 가장 가까운 동작을 답합니다.</p>`;
+        <p class="muted small">Confidence ${Util.pct(Config.uncertainBelow)} 미만은 '판단 불확실'로 표시합니다. 17개 동작 중 하나를 고르는 모델이라, 학습하지 않은 동작에도 가장 가까운 동작을 답합니다.</p>`;
     },
     steps(status) {
       const order = ["PENDING", "STARTED", "DONE"];
@@ -132,12 +138,12 @@
     },
     current(job) {
       Util.$("#current").hidden = false;
-      Util.$("#current-id").innerHTML = `#${job.id} ${View.badge(job.status)}`;
+      Util.$("#current-id").innerHTML = `#${job.id} ${View.badge(job)}`;
       View.steps(job.status);
       let msg = { PENDING: "작업을 대기열에 넣었습니다. 앞 작업이 끝나면 시작합니다.", STARTED: "AI 서버가 영상을 분석하고 있습니다…" }[job.status];
-      const recording = job.status === "STARTED" && job.result_message === Config.capturing;
+      const recording = job.is_recording;            // 서버가 판단 (models.AnalysisJob.is_recording)
       if (job.status === "STARTED" && job.result_message) msg = job.result_message;
-      if (recording) msg = `● 지금 녹화 중 — 카메라 앞에서 동작하세요 (${Config.live().capture_seconds}초)`;
+      if (recording) msg = `● 지금 녹화 중 — 카메라 앞에서 동작하세요 (${Config.live.capture_seconds}초)`;
       Util.$("#current-message").className = recording ? "recording" : "muted";
       Util.$("#current-message").textContent = msg ?? (job.processing_seconds ? `AI 처리 ${Util.sec(job.processing_seconds)} · 영상 ${Util.sec(job.video_seconds)}` : "");
       if (!job.predictions) { Util.$("#current-result").innerHTML = ""; return; }
@@ -155,14 +161,14 @@
           <td class="nowrap">${Util.esc(j.input_type_display)}${j.source_display ? `<br><span class="${j.source === "LIVE_AUTO" ? "badge" : "muted small"}">${Util.esc(j.source_display)}</span>` : ""}${j.title ? `<br><span class="muted small cell-title" title="${Util.esc(j.title)}">${Util.esc(j.title)}</span>` : ""}</td>
           <td>${j.expected_action ? Util.esc(j.expected_action_display) : "-"}</td>
           <td>${j.predictions.map(View.predictionLine).join("<br>") || (j.status === "FAILURE" ? `<span class="error">${Util.esc(j.error_message)}</span>` : Util.esc(j.result_message) || "-")}</td>
-          <td>${View.badge(j.status)}</td>
+          <td>${View.badge(j)}</td>
           <td class="nowrap">${Player.playable(j) ? `<a href="/analyses/${j.id}/#video">▶ 보기</a>` : "-"}</td>
           <td class="nowrap">${Util.sec(j.processing_seconds)}</td>
           <td class="nowrap">${Util.time(j.created_at)}</td></tr>`).join("")
         : '<tr><td colspan="8" class="muted">아직 분석 기록이 없습니다.</td></tr>';
     },
     detail(job) {
-      Util.$("#detail-status").outerHTML = `<span id="detail-status">${View.badge(job.status)}</span>`;
+      Util.$("#detail-status").outerHTML = `<span id="detail-status">${View.badge(job)}</span>`;
       const meta = [
         ...(job.can_edit ? [] : [["회원", Util.esc(job.owner)]]),
         ["입력 방식", job.input_type_display + (job.camera_name ? ` (${Util.esc(job.camera_name)})` : "")
@@ -179,7 +185,7 @@
         ["Celery Task ID", `<code>${Util.esc(job.celery_task_id)}</code>`],
       ];
       Util.$("#detail-meta").innerHTML = meta.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
-      Util.$("#detail-result").innerHTML = View.resultTable(job) || `<p class="muted">${Config.statusKo[job.status]}…</p>`;
+      Util.$("#detail-result").innerHTML = View.resultTable(job) || `<p class="muted">${Util.esc(job.status_display)}…</p>`;
       Player.show(job);
     },
   };
@@ -215,8 +221,8 @@
       const el = Util.$("#video-windows");
       const tracks = (job.predictions || []).filter((p) => p.windows && p.windows.length);
       if (!tracks.length) { el.innerHTML = ""; return; }
-      const names = Config.actionNames();
-      const limit = Config.uncertainBelow();
+      const names = Config.actionNames;
+      const limit = Config.uncertainBelow;
       el.innerHTML = `<h2>구간별 예측 <span class="muted small">버튼을 누르면 영상이 그 시점으로 이동합니다 · 재생 중인 구간은 진하게</span></h2>`
         + tracks.map((p) => `<div class="win-row"><span class="win-track">#${p.track_id}</span>${p.windows.map((w) =>
           `<button type="button" class="win ${w.action_id === p.action_id ? "same" : ""} ${w.confidence < limit ? "low" : ""}"
@@ -290,7 +296,7 @@
     try {
       const s = await Data.status(id);
       if (s.is_finished) return onDone(await Data.detail(id));
-      if (Util.$("#current")) View.current({ id, status: s.status, result_message: s.result_message });
+      if (Util.$("#current")) View.current(s);
       if (count < Config.pollLimit) state.polling = setTimeout(() => poll(id, onDone, count + 1), Config.pollMs);
     } catch (err) {
       state.polling = setTimeout(() => poll(id, onDone, count + 1), Config.pollMs * 2);
@@ -306,14 +312,13 @@
     async submit(e) {
       e.preventDefault();
       const form = e.currentTarget;
-      const err = Util.$("#form-error");
       const btn = Util.$("#start-btn");
-      err.hidden = true;
+      Util.flash("#form-error", "");
       const fd = new FormData();
       fd.append("input_type", state.input);
       if (state.input === "UPLOAD") {
         const file = form.video.files[0];
-        if (!file) { err.textContent = "영상 파일을 선택하세요."; err.hidden = false; return; }
+        if (!file) { Util.flash("#form-error", "영상 파일을 선택하세요."); return; }
         fd.append("video", file);
       } else if (form.camera_name) {
         fd.append("camera_name", form.camera_name.value);
@@ -328,8 +333,7 @@
         form.reset();
         Preview.clear();
       } catch (ex) {
-        err.textContent = Util.errorText(ex);
-        err.hidden = false;
+        Util.flash("#form-error", Util.errorText(ex));
       } finally {
         btn.disabled = false;
         btn.textContent = "AI 분석 시작";
@@ -340,7 +344,7 @@
       Handlers.refreshHistory();
     },
     track(created) {                              // 작업 ID 를 받은 뒤 상태 조회 시작 (분석 시작·장면 저장·자동 감지 공통)
-      View.current({ id: created.id, status: created.status });
+      View.current(created);
       clearTimeout(state.polling);
       poll(created.id, Handlers.finished);
       Handlers.refreshHistory();
@@ -354,9 +358,9 @@
       const f = e.currentTarget;
       try {
         await Data.update(id, { title: f.title.value, memo: f.memo.value });
-        Util.$("#edit-message").textContent = "저장했습니다.";
+        Util.flash("#edit-message", "저장했습니다.", "ok");
       } catch (ex) {
-        Util.$("#edit-message").textContent = Util.errorText(ex);
+        Util.flash("#edit-message", Util.errorText(ex));
       }
     },
     async remove() {
@@ -366,7 +370,7 @@
         await Data.remove(id);
         location.href = "/";
       } catch (ex) {                              // 409: 아직 분석 중
-        Util.$("#edit-message").textContent = Util.errorText(ex);
+        Util.flash("#edit-message", Util.errorText(ex));
       }
     },
   };
@@ -377,12 +381,7 @@
     timer: null,
     pollMs: 1000,
     stateKo: { connecting: "연결 중", running: "실시간", stopped: "멈춤", error: "오류" },
-    message(text, isError = true) {
-      const el = Util.$("#live-message");
-      el.textContent = text || "";
-      el.className = isError ? "error" : "muted";
-      el.hidden = !text;
-    },
+    message: (text, isError = true) => Util.flash("#live-message", text, isError ? "error" : "info"),
     badge(state) {
       const cls = { running: "s-SUCCESS", connecting: "s-STARTED", error: "s-FAILURE" }[state] || "";
       Util.$("#live-badge").innerHTML = state ? `<span class="badge ${cls}">${Live.stateKo[state] ?? state}</span>` : "";
@@ -457,12 +456,12 @@
           expected_action: form.expected_action.value, title: auto ? "" : form.title.value,
         });
         if (auto) Live.lastAuto = Date.now();
-        Util.flash("#live-save-message", `${auto ? "자동 감지로" : ""} 저장했습니다 → 분석 #${created.id}${created.title ? ` (${created.title})` : ""}`, true);
+        Util.flash("#live-save-message", `${auto ? "자동 감지로" : ""} 저장했습니다 → 분석 #${created.id}${created.title ? ` (${created.title})` : ""}`, "ok");
         Handlers.track(created);
       } catch (ex) {
         const code = ex?.response?.status;
         if (auto && (code === 409 || code === 429)) { if (code === 429) Live.lastAuto = Date.now(); return; }  // 조건 아님·간격 — 조용히
-        Util.flash("#live-save-message", Util.errorText(ex), false);
+        Util.flash("#live-save-message", Util.errorText(ex));
       } finally {
         Live.saving = false;
         btn.disabled = false;
@@ -471,7 +470,7 @@
     autoCheck(snap) {
       // 브라우저는 '조건이 된 것 같다'만 보고 요청하고, 실제 판단은 서버(live_views._auto_hit)가 다시 한다
       if (!Util.$("#live-auto").checked || snap.state !== "running") return;
-      const cfg = Config.live();
+      const cfg = Config.live;
       if (Date.now() - Live.lastAuto < cfg.cooldown_seconds * 1000) return;
       const min = Number(Util.$("#live-auto-threshold").value);
       const hit = snap.people.some((p) => p.status === "ok" && p.streak_seconds >= cfg.min_seconds && p.streak_min_confidence >= min);
@@ -494,14 +493,14 @@
     toggle() { return Live.sid ? Live.stop() : Live.start(); },
     leave() {                                            // 페이지를 떠나면 서버 세션도 멈춤
       if (!Live.sid) return;
-      fetch(`/api/live/${Live.sid}/`, { method: "DELETE", keepalive: true, headers: { "X-CSRFToken": Util.csrf() } });
+      fetch(`${Api.live}${Live.sid}/`, { method: "DELETE", keepalive: true, headers: { "X-CSRFToken": Util.csrf() } });
     },
   };
 
   // ── 카메라 주소 관리 (관리자만 화면에 있음) ──
   const Cameras = {
     rotations: [[0, "0°"], [90, "시계 90°"], [180, "180°"], [270, "반시계 90°"]],
-    message: (text, ok) => Util.flash("#camera-message", text, ok),
+    message: (text, tone = "ok") => Util.flash("#camera-message", text, tone),
     async refresh() {
       const list = await Data.cameras();
       // 분석용 선택 목록 (사용 중인 카메라만)
@@ -534,18 +533,18 @@
         if (btn.dataset.act === "delete") {
           if (!confirm(`카메라 '${name}'를 지울까요? 지난 분석 기록의 카메라 이름은 그대로 남습니다.`)) return;
           await Data.deleteCamera(id);
-          Cameras.message(`'${name}'를 지웠습니다.`, true);
+          Cameras.message(`'${name}'를 지웠습니다.`);
         } else {
           const saved = await Data.saveCamera(id, { url: row.querySelector(".cam-url").value,
                                                     rotation: Number(row.querySelector(".cam-rotation").value),
                                                     enabled: row.querySelector(".cam-enabled").checked });
-          Cameras.message(`저장했습니다: ${saved.url} · 회전 ${saved.rotation}° — 연결 확인 중…`, true);
+          Cameras.message(`저장했습니다: ${saved.url} · 회전 ${saved.rotation}° — 연결 확인 중…`);
           if (Live.sid) Live.message("카메라 설정이 바뀌었습니다. 실시간 보기를 멈췄다가 다시 시작하면 적용됩니다.", false);
           await Cameras.check(id, name);
         }
         await Cameras.refresh();
       } catch (ex) {
-        Cameras.message(Util.errorText(ex), false);
+        Cameras.message(Util.errorText(ex), "error");
       } finally {
         btn.disabled = false;
       }
@@ -553,9 +552,9 @@
     async check(id, name) {
       try {
         const r = await Data.checkCamera(id);
-        Cameras.message(`'${name}' ${r.message} (${r.seconds}초)`, true);
+        Cameras.message(`'${name}' ${r.message} (${r.seconds}초)`, "ok");
       } catch (ex) {
-        Cameras.message(`저장은 됐지만 '${name}' 연결 확인 실패: ${Util.errorText(ex)}`, false);
+        Cameras.message(`저장은 됐지만 '${name}' 연결 확인 실패: ${Util.errorText(ex)}`, "error");
       }
     },
     async add() {
@@ -564,11 +563,11 @@
       try {
         const c = await Data.addCamera({ name: name.value.trim(), url: url.value, enabled: true });
         name.value = url.value = "";
-        Cameras.message(`'${c.name}' 추가: ${c.url} — 연결 확인 중…`, true);
+        Cameras.message(`'${c.name}' 추가: ${c.url} — 연결 확인 중…`);
         await Cameras.refresh();
         await Cameras.check(c.id, c.name);
       } catch (ex) {
-        Cameras.message(Util.errorText(ex), false);
+        Cameras.message(Util.errorText(ex), "error");
       }
     },
   };
@@ -585,7 +584,7 @@
       if (Util.$("#camera-admin")) {
         Util.$("#camera-table").addEventListener("click", Cameras.onClick);
         Util.$("#camera-add").addEventListener("click", Cameras.add);
-        Cameras.refresh().catch((ex) => Cameras.message(Util.errorText(ex), false));
+        Cameras.refresh().catch((ex) => Cameras.message(Util.errorText(ex), "error"));
       }
       // 이력 표시 + 새로고침 전에 진행 중이던 작업이 있으면 이어서 조회 (목록 요청 한 번)
       Data.list().then((jobs) => {

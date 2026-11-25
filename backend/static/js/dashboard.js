@@ -9,8 +9,8 @@
   const css = getComputedStyle(document.documentElement);
   const color = (name, fallback) => css.getPropertyValue(name).trim() || fallback;
   const Config = {
-    categoryColor: {
-      "기물 파손": "#c2410c", "폭력": "#b91c1c", "장시간 머묾": "#2563eb", "도난 의심": "#7c3aed", "응급": "#0f766e",
+    categoryColor: {                              // 분류 코드(actions.CATEGORY_KO 의 키) → 색. 이름은 서버가 보냄
+      property_damage: "#c2410c", violence: "#b91c1c", loitering: "#2563eb", theft_suspect: "#7c3aed", emergency: "#0f766e",
     },
     statusColor: { SUCCESS: "#15803d", FAILURE: "#b91c1c", STARTED: "#d97706", PENDING: "#64748b" },
     refreshSeconds: 30,
@@ -46,7 +46,7 @@
           indexAxis: "y", maintainAspectRatio: false,
           scales: { x: countAxis({ stacked: true }), y: { stacked: true } },
           plugins: {
-            tooltip: { callbacks: { afterTitle: (items) => rows[items[0].dataIndex].category } },
+            tooltip: { callbacks: { afterTitle: (items) => rows[items[0].dataIndex].category_ko } },
             legend: { display: false },            // 막대 색이 분류별이라 아래 HTML 범례로 대신
           },
           // 막대를 누르면 그 동작으로 예측된 작업 목록으로
@@ -55,8 +55,8 @@
       });
       const legend = document.createElement("div");
       legend.className = "legend";
-      legend.innerHTML = Object.entries(Config.categoryColor)
-        .map(([name, c]) => `<span><i style="background:${c}"></i>${name}</span>`).join("")
+      legend.innerHTML = Object.entries(Data.chart.categories)
+        .map(([code, name]) => `<span><i style="background:${Config.categoryColor[code]}"></i>${name}</span>`).join("")
         + '<span><i style="background:#9ca3af55"></i>옅은 색 = 판단 불확실</span><span>막대를 누르면 아래 목록이 그 동작으로 걸러집니다</span>';
       document.getElementById("actionChart").parentElement.after(legend);
     },
