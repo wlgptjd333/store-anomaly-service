@@ -2,6 +2,16 @@
   "model": "ExtraTreesClassifier",
   "feature_set": "body40",
   "window": "whole",
+  "train_augmentation": {
+    "kinds": [
+      "cut",
+      "late",
+      "double",
+      "pad"
+    ],
+    "per_clip": 2,
+    "code": "scripts/27_field_robust.py variant"
+  },
   "sequence_steps": 30,
   "frame_features": [
     "bn_nose_x",
@@ -193,7 +203,7 @@
     "random_state": 42
   },
   "pose": {
-    "model": "yolo11n-pose.pt",
+    "model": "yolo11m-pose.pt",
     "image_size": 640,
     "person_confidence": 0.25,
     "keypoint_confidence": 0.5
@@ -221,22 +231,22 @@
   "extra_training_clips": 5,
   "evaluation_train_S01_S03": {
     "validation_S04": {
-      "accuracy": 0.9608,
-      "macro_f1": 0.9602,
+      "accuracy": 0.9412,
+      "macro_f1": 0.9406,
       "clips": 51,
-      "accuracy_front": 1.0,
-      "accuracy_side": 1.0,
-      "accuracy_back": 0.8824
+      "accuracy_front": 0.9412,
+      "accuracy_side": 0.9412,
+      "accuracy_back": 0.9412
     },
     "test_S05": {
-      "accuracy": 0.8824,
-      "macro_f1": 0.8622,
+      "accuracy": 0.902,
+      "macro_f1": 0.8895,
       "clips": 51,
       "accuracy_front": 0.9412,
       "accuracy_side": 0.8235,
-      "accuracy_back": 0.8824
+      "accuracy_back": 0.9412
     }
   },
   "sklearn_version": "1.9.1",
-  "created_at": "2026-11-25T09:41:35"
+  "created_at": "2026-11-25T12:05:19"
 }

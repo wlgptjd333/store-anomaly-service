@@ -1,0 +1,13 @@
+# NVIDIA GPU 가 있는 컴퓨터에서 AI 서버(FastAPI)에 GPU 를 붙인다.
+#   .env 에 COMPOSE_FILE=compose.yaml:compose.gpu.yaml 을 넣으면 docker compose 명령이 이 파일까지 같이 읽는다.
+#   GPU 가 없는 컴퓨터는 이 줄을 빼면 같은 이미지가 CPU 로 돈다 (느림: 8초 영상 분석 약 1분, 실시간 보기 3~5fps).
+# 왜: Pose 모델을 11n → 11m 으로 바꿈 (현장처럼 잘린 영상 정확도 73.7 → 87.6, training/docs/DESIGN_DECISIONS.md 21번)
+services:
+  fastapi:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
