@@ -18,8 +18,9 @@
 고르는 규칙 (미리 정함): orig 가 지금보다 1%p 넘게 떨어지면 안 됨. 그 안에서 변형 넷(cut·late·double·pad) 평균이 가장 높은 것.
   이 차이가 난수 3개 편차보다 커야 '효과 있음'. Test S05 와 현장 영상은 고른 뒤 확인만.
 
-실행: .venv/bin/python scripts/27_field_robust.py [--only 이름,…] [--final 이름]
-결과: reports/tables/field_robust_cv.csv, field_robust_per_action.csv, (--final) field_robust_final.csv
+실행: .venv/bin/python scripts/27_field_robust.py [--only 이름,…] [--final 이름] [--plot]
+결과: reports/tables/field_robust_cv.csv, field_robust_per_action.csv, (--final) field_robust_final.csv,
+      (--plot) docs/images/field_robust.png — 지금 모델 vs 고른 모델, 변형별 정확도
 """
 from __future__ import annotations
 
@@ -218,7 +219,10 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--only", default="")
     ap.add_argument("--final", default="", help="고른 설정 (쉼표) → Test S05 + 현장 영상 확인")
+    ap.add_argument("--plot", action="store_true", help="field_robust_cv.csv → docs/images/field_robust.png")
     args = ap.parse_args()
+    if args.plot:
+        return plot()
     DEV_SUBJ = SPLIT["train"] + SPLIT["validation"]
     names = [n for n in CONFIGS if not args.only or any(k in n for k in args.only.split(","))]
     if args.final:
@@ -255,6 +259,30 @@ def main() -> None:
         pd.DataFrame(summary).to_csv(out, index=False, encoding="utf-8-sig")
     pa = pd.concat(allrows).groupby(["config", "variant", "action_id"]).correct.mean().unstack(0).mul(100).round(1)
     pa.to_csv(TABLES / "field_robust_per_action.csv", encoding="utf-8-sig")
+
+
+def plot(chosen="Pose 11m · whole + 증강"):
+    import matplotlib.pyplot as plt
+    fig_mod = load_script("08_draw_skeleton_figure.py")
+    fig_mod.setup_font()
+    df = pd.read_csv(TABLES / "field_robust_cv.csv").set_index("config")
+    labels = {"orig": "원래 영상", "cut": "바로 시작·끊기", "late": "중간부터", "double": "두 번 반복", "pad": "오래 서 있기"}
+    x = np.arange(len(labels))
+    fig, ax = plt.subplots(figsize=(7.5, 3.2))
+    for i, (name, tag, color) in enumerate([("지금 (whole)", "전 (11n)", "#9aa4b2"), (chosen, "후 (11m + 현장식 증강)", "#2f6fdb")]):
+        v = df.loc[name, list(labels)].to_numpy(float)
+        bars = ax.bar(x + (i - 0.5) * 0.38, v, 0.38, label=tag, color=color)
+        ax.bar_label(bars, fmt="%.0f", fontsize=8, padding=2)
+    ax.set_xticks(x, list(labels.values()))
+    ax.set_ylim(50, 106)
+    ax.set_ylabel("정확도 (%)")
+    ax.set_title("현장처럼 바꾼 영상에서의 정확도 (S01~S04 사람 단위 4-fold)", fontsize=10)
+    ax.legend(frameon=False, fontsize=8, loc="upper right", ncol=2)
+    ax.spines[["top", "right"]].set_visible(False)
+    out = ROOT / "docs" / "images" / "field_robust.png"
+    fig.tight_layout()
+    fig.savefig(out, dpi=120, facecolor="white")
+    print(out.relative_to(ROOT))
 
 
 def final(names, classes):

@@ -110,6 +110,10 @@ def main() -> None:
     setup_font()
 
     classes = list(csv.DictReader(CLASSES.open(encoding="utf-8-sig")))
+    # 그림 제목은 팀 통일 번호·이름 (서비스 화면과 같게, 결정 15번). 영상 파일 이름은 이 저장소 번호 그대로
+    unified = {r["team_repo_id"]: f"{r['unified_id']} {r['unified_name_ko']}"
+               for r in csv.DictReader((ROOT / "configs" / "unified_label_map.csv").open(encoding="utf-8-sig"))
+               if r["kind"] == "action"}
     ncol = 3
     nrow = int(np.ceil(len(classes) / ncol))
     fig, axes = plt.subplots(nrow, ncol, figsize=(ncol * 5.2, nrow * 1.7))
@@ -120,7 +124,7 @@ def main() -> None:
         df = pd.read_csv(SEQ / f"{clip}_sequence.csv")
         s, e = segment_of(clip)
         times = list(np.linspace(s, e, N_POSES))
-        draw_tile(ax, poses_at(df, times), f"{c['action_id']} {c['name_ko']}")
+        draw_tile(ax, poses_at(df, times), unified[c["action_id"]])
     view = "측면" if args.view == "S" else "정면"
     fig.suptitle(f"동작 17개 — 2D Pose 뼈대 ({args.subject} {view}, 동작 구간을 4 시점으로, 왼쪽 → 오른쪽 시간 순)",
                  fontsize=12, y=1.0)
