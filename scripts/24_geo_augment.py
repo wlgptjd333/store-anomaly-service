@@ -16,28 +16,28 @@
 from __future__ import annotations
 
 import argparse
-import importlib.util
 import time
+import sys
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]
-_spec = importlib.util.spec_from_file_location("g", ROOT / "scripts" / "22_gpu_search.py")
-g = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(g)
+sys.path.insert(0, str(ROOT))
+from src.schema import BODY40, KP, seq_columns  # noqa: E402
+from src.common import load_script  # noqa: E402
+g = load_script("22_gpu_search.py")
 
-KP = [f[3:-2] for f in g.FRAME if f.startswith("bn_") and f.endswith("_x")]
 AUGS = {"rot": ("rot",), "warp": ("warp",), "crop": ("crop",), "hip": ("hip",), "rotcrop": ("rot", "crop"), "all": ("rot", "warp", "crop", "hip")}
 
 
 def augment(tr: pd.DataFrame, kinds, copies: int, steps: int, seed: int) -> pd.DataFrame:
     rng = np.random.default_rng(seed)
-    F = len(g.FRAME)
-    cols = [f"t{i:02d}_{f}" for i in range(steps) for f in g.FRAME]
+    F = len(BODY40)
+    cols = seq_columns(steps)
     X = tr[cols].to_numpy(float).reshape(len(tr), steps, F)
-    ix = {f: j for j, f in enumerate(g.FRAME)}
+    ix = {f: j for j, f in enumerate(BODY40)}
     xs, ys = [ix[f"bn_{k}_x"] for k in KP], [ix[f"bn_{k}_y"] for k in KP]
     out = []
     t = np.linspace(0, 1, steps)

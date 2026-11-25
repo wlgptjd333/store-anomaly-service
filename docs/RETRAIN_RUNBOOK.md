@@ -138,7 +138,7 @@ python scripts/15_export_service_model.py --model rf --extras "" --views FS --no
 
 - 출력 `artifacts/service/`: `action_model.joblib`(ExtraTrees), `action_cnn.pt`(1D-CNN 3개), `feature_columns.json`, `training_info.json`
   - 1D-CNN 학습은 GPU 면 약 1분, CPU 만 있으면 수십 분. ExtraTrees 만 내보내려면 `--cnn-seeds ""` (이때 예전 `action_cnn.pt` 는 지움)
-- 새 구도 영상(25번)은 **평가(26번)를 먼저 기록한 뒤** `--extra-csv` 로 최종 학습에만 더함 (기록용 평가에는 안 들어감). `--no-pos`·`--view-aug`·`--crop-aug` 는 26번 비교용 옵션 (지금 서비스는 안 씀).
+- 새 구도 영상(25번)은 **평가(26번)를 먼저 기록한 뒤** `--extra-csv` 로 최종 학습에만 더함 (기록용 평가에는 안 들어감). 구도 강건 후보(골반 위치 빼기·시점 증강·자르기) 비교는 26번이 직접 함 (서비스 학습 15번에는 옵션 없음).
 - 화면에 Train S01~S03 → Validation S04 / Test S05 정확도가 방향별로 나옴 (기록용, `training_info.json` 에도 저장). 최종 모델은 5명 전부로 학습.
 - 서비스 화면·대시보드에 보이는 번호·이름은 **팀 통일 표기**(A001 `kiosk_tap` 키오스크 두드리기 …): `15` 가 [`configs/unified_label_map.csv`](../configs/unified_label_map.csv) 로 Class 를 바꿔 `training_info.json` 의 `class_info` 에 넣음 (분류는 `configs/action_classes.csv`). 이름을 바꾸려면 `unified_label_map.csv` 를 고치고, 서비스 `backend/analyses/actions.py` 도 같이 (Django 는 그 목록으로 화면·대시보드를 그림). 예전 번호로 내보내기는 `--repo-ids`.
 

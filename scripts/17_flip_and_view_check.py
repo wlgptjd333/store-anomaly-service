@@ -15,8 +15,8 @@
 """
 from __future__ import annotations
 
-import importlib.util
 import json
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -24,35 +24,21 @@ import pandas as pd
 from sklearn.metrics import accuracy_score
 
 ROOT = Path(__file__).resolve().parents[1]
-spec = importlib.util.spec_from_file_location("t14", ROOT / "scripts" / "14_train_baseline.py")
-t14 = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(t14)
+sys.path.insert(0, str(ROOT))
+from src.schema import flip_matrix  # noqa: E402
+from src.common import load_script  # noqa: E402
+t14 = load_script("14_train_baseline.py")
 SPLIT = json.loads((ROOT / "configs" / "subject_split.json").read_text(encoding="utf-8"))["main"]
 TABLES = ROOT / "reports" / "tables"
 STEPS = 30
-KP = ["nose", "left_eye", "right_eye", "left_ear", "right_ear", "left_shoulder", "right_shoulder", "left_elbow",
-      "right_elbow", "left_wrist", "right_wrist", "left_hip", "right_hip", "left_knee", "right_knee",
-      "left_ankle", "right_ankle"]
 COLS = t14.cols("body40", "sequence")
 SEEDS = [None, 0, 1, 2, 3, 4]  # None = 기준 난수 42
 
 
-def swap_name(n: str) -> str:
-    return n.replace("left_", "TMP_").replace("right_", "left_").replace("TMP_", "right_")
-
-
 def flip(df: pd.DataFrame) -> pd.DataFrame:
+    """좌우 반전 사본 (규칙은 src/schema.flip_matrix 한 곳)"""
     f = df.copy()
-    for t in range(STEPS):
-        p = f"t{t:02d}_"
-        for k in KP:
-            src = swap_name(k)
-            f[p + f"bn_{k}_x"] = -df[p + f"bn_{src}_x"]
-            f[p + f"bn_{k}_y"] = df[p + f"bn_{src}_y"]
-        for side in ("elbow", "knee"):
-            f[p + f"left_{side}_angle"] = df[p + f"right_{side}_angle"]
-            f[p + f"right_{side}_angle"] = df[p + f"left_{side}_angle"]
-        f[p + "hip_x_img"] = 1 - df[p + "hip_x_img"]
+    f[COLS] = flip_matrix(df[COLS].to_numpy(float), STEPS)
     return f
 
 

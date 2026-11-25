@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import sys
 from pathlib import Path
 
 import matplotlib
@@ -23,13 +24,12 @@ import pandas as pd  # noqa: E402
 from matplotlib import font_manager  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from src.schema import KP  # noqa: E402
 SEQ = ROOT / "reports" / "sequences"
 SEGMENTS = ROOT / "reports" / "tables" / "segments_auto.csv"
 CLASSES = ROOT / "configs" / "action_classes.csv"
 
-KP = ["nose", "left_eye", "right_eye", "left_ear", "right_ear", "left_shoulder", "right_shoulder",
-      "left_elbow", "right_elbow", "left_wrist", "right_wrist", "left_hip", "right_hip",
-      "left_knee", "right_knee", "left_ankle", "right_ankle"]
 # (a, b, 색) — 왼쪽 파랑, 오른쪽 주황, 몸통 회색
 EDGES = [(5, 7, "L"), (7, 9, "L"), (11, 13, "L"), (13, 15, "L"),
          (6, 8, "R"), (8, 10, "R"), (12, 14, "R"), (14, 16, "R"),

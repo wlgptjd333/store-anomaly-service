@@ -41,10 +41,10 @@ from src.feature_utils import (LEFT_HIP, LEFT_SHOULDER, RIGHT_HIP, RIGHT_SHOULDE
                                normalize_by_shoulder_width, selected_joint_angles)
 from src.team_feature_utils import (SCALE_WARN_RATIO, TEAM03_FEATURE_NAMES,  # noqa: E402
                                     normalize_by_body_scale, team03_features)
+from src.schema import ANGLES as ANGLE_NAMES  # noqa: E402
 
 # 교과10 16번과 같은 38-D 이름: 관절 17개 × (x, y) + 관절각도 4개
 KP_NAMES = COCO_KEYPOINT_NAMES
-ANGLE_NAMES = ["left_elbow_angle", "right_elbow_angle", "left_knee_angle", "right_knee_angle"]
 FEATURE_NAMES = [f"{n}_{k}" for n in KP_NAMES for k in ("x", "y")] + ANGLE_NAMES
 CORE = [LEFT_SHOULDER, RIGHT_SHOULDER, LEFT_HIP, RIGHT_HIP]       # 정규화 기준 관절
 

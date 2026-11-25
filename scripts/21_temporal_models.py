@@ -18,7 +18,6 @@
 from __future__ import annotations
 
 import argparse
-import importlib.util
 import json
 import sys
 import time
@@ -31,13 +30,13 @@ from torch import nn
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+from src.schema import BODY40, flip_matrix, seq_columns  # noqa: E402
+from src.common import load_script  # noqa: E402
 from src.sequence_extras import add_extras  # noqa: E402
 from src.temporal_cnn import fit_cnn, predict_cnn, to_seq as _to_seq  # noqa: E402  (서비스와 같은 코드)
 
-_spec = importlib.util.spec_from_file_location("more", ROOT / "scripts" / "20_more_improvements.py")
-more = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(more)
-FRAME, flip_matrix, et = more.FRAME, more.flip_matrix, more.et
+more = load_script("20_more_improvements.py")
+et = more.et
 
 SPLIT = json.loads((ROOT / "configs" / "subject_split.json").read_text(encoding="utf-8"))["main"]
 DATA = ROOT / "reports" / "dataset" / "sequence_dataset_whole.csv"
@@ -46,11 +45,11 @@ STEPS = 30
 SEEDS = (42, 0, 1)
 EXTRAS = ["velocity", "stats"]
 DEV = "cuda" if torch.cuda.is_available() else "cpu"
-COLS = [f"t{i:02d}_{f}" for i in range(STEPS) for f in FRAME]
+COLS = seq_columns(STEPS)
 
 
 def to_seq(X: np.ndarray) -> np.ndarray:
-    return _to_seq(X, STEPS, len(FRAME))
+    return _to_seq(X, STEPS, len(BODY40))
 
 
 class GRU(nn.Module):
@@ -81,8 +80,8 @@ def fold_probs(tr: pd.DataFrame, te: pd.DataFrame, classes, seed, kinds):
     Xte = te[COLS].to_numpy(float)
     out = {}
     if "et" in kinds:
-        m = et(seed).fit(add_extras(Xtr, STEPS, len(FRAME), EXTRAS), ytr)
-        out["et"] = m.predict_proba(add_extras(Xte, STEPS, len(FRAME), EXTRAS))
+        m = et(seed).fit(add_extras(Xtr, STEPS, len(BODY40), EXTRAS), ytr)
+        out["et"] = m.predict_proba(add_extras(Xte, STEPS, len(BODY40), EXTRAS))
     for k in ("cnn", "gru"):
         if k in kinds:
             out[k] = fit_nn(k, to_seq(Xtr), ytr, to_seq(Xte), seed)

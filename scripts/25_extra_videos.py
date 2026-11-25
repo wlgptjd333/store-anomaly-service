@@ -14,7 +14,6 @@
 from __future__ import annotations
 
 import argparse
-import importlib.util
 import json
 import sys
 from pathlib import Path
@@ -25,18 +24,13 @@ from ultralytics import YOLO
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from src.common import load_config, resolve_device  # noqa: E402
+from src.common import load_config, load_script, resolve_device  # noqa: E402
+from src.schema import seq_columns  # noqa: E402
 
 
-def _load(name, file):
-    spec = importlib.util.spec_from_file_location(name, ROOT / "scripts" / file)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
 
-
-s03 = _load("s03", "03_build_sequences.py")
-s13 = _load("s13", "13_build_sequence_dataset.py")
+s03 = load_script("03_build_sequences.py")
+s13 = load_script("13_build_sequence_dataset.py")
 DEFAULT_LABELS = "꺼내기=A12,밀치기=A05,앞으로 눕기=A09,키오스크치기=A01,흔들기=A04"
 
 
@@ -60,7 +54,7 @@ def main() -> None:
     out_dir = ROOT / "reports" / "extra" / args.name
     s03.VIDEOS = Path(args.src)
     s03.OUT_DIR = out_dir
-    names = [f"t{i:02d}_{f}" for i in range(steps) for f in s13.FRAME_FEATURES] + [f"mid_{f}" for f in s13.FRAME_FEATURES]
+    names = seq_columns(steps, s13.FRAME_FEATURES) + [f"mid_{f}" for f in s13.FRAME_FEATURES]
     rows, seen = [], {}
     for video in sorted(Path(args.src).glob("*.mp4")):
         aid = labels.get(video.stem)

@@ -26,24 +26,22 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import sys
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from src.schema import ANGLES, KP, POS  # noqa: E402
 APPROVED = ROOT / "configs" / "approved_clip_manifest.csv"
 CONFIG = ROOT / "configs" / "baseline_config.json"
 OUT = ROOT / "reports" / "dataset"
 CHECK = ROOT / "reports" / "tables" / "sequence_dataset_check.csv"
 
-KP = ["nose", "left_eye", "right_eye", "left_ear", "right_ear", "left_shoulder", "right_shoulder",
-      "left_elbow", "right_elbow", "left_wrist", "right_wrist", "left_hip", "right_hip",
-      "left_knee", "right_knee", "left_ankle", "right_ankle"]
 COURSE = [f"{k}_{a}" for k in KP for a in "xy"]
 BODY = [f"bn_{k}_{a}" for k in KP for a in "xy"]
-ANGLES = ["left_elbow_angle", "right_elbow_angle", "left_knee_angle", "right_knee_angle"]
-POS = ["hip_x_img", "hip_y_img"]
 FRAME_FEATURES = COURSE + BODY + ANGLES + POS  # 74
 META = ["clip_id", "subject_id", "action_id", "action_label", "view", "take_id"]
 

@@ -20,8 +20,8 @@
 """
 from __future__ import annotations
 
-import importlib.util
 import json
+import sys
 from pathlib import Path
 
 import matplotlib
@@ -31,17 +31,13 @@ import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from src.common import load_script  # noqa: E402
 
 
-def load(name: str, file: str):
-    spec = importlib.util.spec_from_file_location(name, ROOT / "scripts" / file)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
 
-
-t14 = load("t14", "14_train_baseline.py")
-t17 = load("t17", "17_flip_and_view_check.py")
+t14 = load_script("14_train_baseline.py")
+t17 = load_script("17_flip_and_view_check.py")
 SPLIT = json.loads((ROOT / "configs" / "subject_split.json").read_text(encoding="utf-8"))["main"]
 TABLES = ROOT / "reports" / "tables"
 IMG = ROOT / "docs" / "images"

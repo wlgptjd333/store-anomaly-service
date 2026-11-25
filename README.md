@@ -121,6 +121,8 @@ Sequence CSV (clip 하나 = 파일 하나, 159열)
 | `scripts/video_hub.py` | 같은 와이파이에서 팀원 핸드폰 영상을 모으는 업로드 서버 (표준 라이브러리만) |
 | `src/feature_utils.py` | 관절각도, 어깨 폭 정규화 (교과10 수업 코드) |
 | `src/team_feature_utils.py` | 3팀 Feature, 몸 크기 정규화 |
+| `src/schema.py` | 관절 17개·각도 4개·골반 위치·body40 이름, Sequence 열 이름, 좌우 반전 — 모든 스크립트와 서비스가 이 한 파일을 씀 |
+| `src/common.py` | 설정 읽기, 장치 고르기, 번호 붙은 스크립트 불러오기(`load_script`) |
 
 ## 지금까지 결과
 

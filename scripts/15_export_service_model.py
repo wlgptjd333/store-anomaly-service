@@ -23,9 +23,9 @@
     · 좌우 반전 복사본은 학습 데이터에만 더한다 (평가는 원본).
   - 11/24 밤 ExtraTrees + 1D-CNN 확률 평균 (21번 실험: 4-fold 82.4 → 88.7, Test S05 78.4 → 83.0)
 
-실행: .venv/bin/python scripts/15_export_service_model.py                                   # 지금 서비스 모델 (기본)
-      .venv/bin/python scripts/15_export_service_model.py --no-pos --view-aug 2 --extra-csv reports/extra/s05_newcam/sequence_dataset_whole.csv
-                                                                                                # 구도 강건 옵션 (26번 결과로 고름)
+실행: .venv/bin/python scripts/15_export_service_model.py                                   # 새 구도 영상 없이
+      .venv/bin/python scripts/15_export_service_model.py --extra-csv reports/extra/s05_newcam/sequence_dataset_whole.csv
+                                                                                                # 지금 서비스 (11/24 밤, 새 구도 5개 더함)
       .venv/bin/python scripts/15_export_service_model.py --cnn-seeds ""                       # 11/24 오후 모델 (ExtraTrees 만)
       .venv/bin/python scripts/15_export_service_model.py --model rf --extras "" --cnn-seeds ""   # 11/24 오전 모델
       .venv/bin/python scripts/15_export_service_model.py --model rf --extras "" --views FS --no-flip   # 11/22 모델
@@ -34,7 +34,6 @@ from __future__ import annotations
 
 import argparse
 import csv
-import importlib.util
 import json
 import sys
 from datetime import datetime
@@ -50,7 +49,9 @@ from sklearn.metrics import accuracy_score, f1_score
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from src.temporal_cnn import CnnEnsemble  # noqa: E402
+from src.schema import BODY40, flip_matrix, seq_columns  # noqa: E402
 from src.sequence_extras import add_extras, extra_names  # noqa: E402
+from src.team_feature_utils import BODY_SCALE_MIN_PX, BODY_SHOULDER_RATIO  # noqa: E402
 
 CFG = json.loads((ROOT / "configs" / "baseline_config.json").read_text(encoding="utf-8"))
 SPLIT = json.loads((ROOT / "configs" / "subject_split.json").read_text(encoding="utf-8"))
@@ -60,18 +61,8 @@ OUT = ROOT / "artifacts" / "service"
 UNIFIED_MAP = ROOT / "configs" / "unified_label_map.csv"
 STEPS = CFG["sequence_steps"]
 
-KP = ["nose", "left_eye", "right_eye", "left_ear", "right_ear", "left_shoulder", "right_shoulder",
-      "left_elbow", "right_elbow", "left_wrist", "right_wrist", "left_hip", "right_hip",
-      "left_knee", "right_knee", "left_ankle", "right_ankle"]
-ANGLES = ["left_elbow_angle", "right_elbow_angle", "left_knee_angle", "right_knee_angle"]
-POS = ["hip_x_img", "hip_y_img"]
-FRAME_FEATURES = [f"bn_{k}_{a}" for k in KP for a in "xy"] + ANGLES + POS  # body40
-COLUMNS = [f"t{i:02d}_{f}" for i in range(STEPS) for f in FRAME_FEATURES]
+COLUMNS = seq_columns(STEPS)                          # t00_bn_nose_x … t29_hip_y_img
 VIEW_NAMES = {"F": "front", "S": "side", "B": "back"}
-
-_spec = importlib.util.spec_from_file_location("t17", ROOT / "scripts" / "17_flip_and_view_check.py")
-t17 = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(t17)
 
 
 def parse_args():
@@ -86,21 +77,10 @@ def parse_args():
                     help="1D-CNN 채널 폭 (22번: 64 → 128 이 4-fold 90.2 → 91.7, Test S05 86.3 → 88.2). 예전 모델은 64")
     ap.add_argument("--repo-ids", action="store_true",
                     help="Class 를 이 저장소 번호(A01..)로. 기본은 팀 통일 번호(A001.., unified_label_map.csv)")
-    ap.add_argument("--no-pos", action="store_true",
-                    help="골반 화면 위치(hip_x_img, hip_y_img) 빼기 — 카메라 구도가 바뀌면 값이 달라지는 Feature (26번)")
-    ap.add_argument("--view-aug", type=int, default=0, help="시점 증강 사본 수 (26번 view_aug, 0 = 안 함)")
-    ap.add_argument("--crop-aug", type=int, default=0, help="앞뒤 자르기 증강 사본 수 (24번 crop, 0 = 안 함)")
     ap.add_argument("--extra-csv", default="",
                     help="최종 학습에만 더할 Sequence CSV (쉼표). 예: reports/extra/s05_newcam/sequence_dataset_whole.csv "
                          "— 기록용 평가(Train S01~S03)에는 넣지 않음")
     return ap.parse_args()
-
-
-def load_s26():
-    spec = importlib.util.spec_from_file_location("s26", ROOT / "scripts" / "26_camera_robust.py")
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
 
 
 def make_model(kind: str):
@@ -134,9 +114,6 @@ def main() -> None:
     df = df[df.view.isin(views)].reset_index(drop=True)
     extra = pd.concat([pd.read_csv(ROOT / p) for p in args.extra_csv.split(",") if p.strip()] or [df.iloc[:0]],
                       ignore_index=True)
-    feats = [f for f in FRAME_FEATURES if not (args.no_pos and f in POS)]
-    cols = [f"t{i:02d}_{f}" for i in range(STEPS) for f in feats]
-    s26 = load_s26() if (args.view_aug or args.crop_aug) else None
     acts = {r["action_id"]: r for r in csv.DictReader((ROOT / "configs" / "action_classes.csv").open(encoding="utf-8-sig"))}
     if not args.repo_ids:
         # 서비스·대시보드는 팀 통일 번호·이름(A001 kiosk_tap 키오스크 두드리기 ..)으로 보여 준다 (11/24).
@@ -152,51 +129,35 @@ def main() -> None:
             extra["action_id"] = extra["action_id"].astype(str).map(to_u)
             assert extra["action_id"].notna().all()
     y = df["action_id"].astype(str).to_numpy()
-    names = cols + extra_names(feats, STEPS, extras)
-    assert add_extras(df[cols].to_numpy(float), STEPS, len(feats), extras).shape[1] == len(names)
+    names = COLUMNS + extra_names(BODY40, STEPS, extras)
+    assert add_extras(df[COLUMNS].to_numpy(float), STEPS, len(BODY40), extras).shape[1] == len(names)
 
     cnn_seeds = [int(x) for x in args.cnn_seeds.split(",") if x.strip()]
 
-    def augment(part: pd.DataFrame) -> pd.DataFrame:
-        """26번과 같은 순서: 원본 + 시점 사본 + 자르기 사본 → (뒤에서) 전체 좌우 반전"""
-        if s26 is None:
-            return part
-        X0 = part[COLUMNS].to_numpy(float)
-        rng = np.random.default_rng(CFG["model"]["random_state"])
-        blocks = [X0]
-        if args.view_aug:
-            blocks.append(s26.view_aug(X0, args.view_aug, rng))
-        if args.crop_aug:
-            tmp = pd.DataFrame(X0, columns=COLUMNS).assign(subject_id="x", action_id="x", view="x")
-            blocks.append(s26.aug24.augment(tmp, ("crop",), args.crop_aug, STEPS,
-                                            CFG["model"]["random_state"])[COLUMNS].to_numpy(float))
-        n_copy = len(blocks)
-        return pd.DataFrame(np.vstack(blocks), columns=COLUMNS).assign(
-            action_id=np.tile(part["action_id"].astype(str).to_numpy(), n_copy))
-
     def train(part: pd.DataFrame):
         """(ExtraTrees, 1D-CNN 묶음 또는 None)"""
-        part = augment(part)
-        if flip:
-            part = pd.concat([part, t17.flip(part)], ignore_index=True)
-        Xb = part[cols].to_numpy(float)
+        Xb = part[COLUMNS].to_numpy(float)
         yp = part["action_id"].astype(str).to_numpy()
-        tree = make_model(args.model).fit(add_extras(Xb, STEPS, len(feats), extras), yp)
+        if flip:                                   # 좌우 반전 사본은 학습에만 (평가는 원본)
+            Xb, yp = np.vstack([Xb, flip_matrix(Xb, STEPS)]), np.concatenate([yp, yp])
+        tree = make_model(args.model).fit(add_extras(Xb, STEPS, len(BODY40), extras), yp)
         cnn = None
         if cnn_seeds:
             idx = {c: i for i, c in enumerate(tree.classes_)}      # CNN 출력 순서 = ExtraTrees classes_ 순서
-            cnn = CnnEnsemble.fit(Xb, np.array([idx[a] for a in yp]), STEPS, len(feats),
+            # 열 우선 배치로 (예전 DataFrame 과 같게): CNN 정규화의 float32 평균은 더하는 순서(배치)에 따라 마지막 자리가
+            # 달라지고, 그 차이만으로 결과가 바뀐다 (C 배치로 돌리면 Val 96.1→98.0, Test S05 88.2→84.3)
+            cnn = CnnEnsemble.fit(np.asfortranarray(Xb), np.array([idx[a] for a in yp]), STEPS, len(BODY40),
                                   len(tree.classes_), cnn_seeds, width=args.cnn_width)
         return tree, cnn
 
     def predict(models, Xb: np.ndarray) -> np.ndarray:
         tree, cnn = models
-        p = tree.predict_proba(add_extras(Xb, STEPS, len(feats), extras))
+        p = tree.predict_proba(add_extras(Xb, STEPS, len(BODY40), extras))
         if cnn is not None:
             p = (p + cnn.predict_proba(Xb)) / 2
         return tree.classes_[p.argmax(1)]
 
-    Xbase = df[cols].to_numpy(float)
+    Xbase = df[COLUMNS].to_numpy(float)
 
     # 1) 기록용 평가 (Train S01~S03) — 방향별로도 적음
     tr = df.subject_id.isin(subjects("train")).to_numpy()
@@ -231,7 +192,7 @@ def main() -> None:
         "feature_set": "body40",
         "window": "whole",
         "sequence_steps": STEPS,
-        "frame_features": feats,
+        "frame_features": BODY40,
         "sequence_extras": extras,
         "n_features": len(names),
         "classes": classes,
@@ -248,15 +209,13 @@ def main() -> None:
                  "person_confidence": PROJECT["person_confidence"],
                  "keypoint_confidence": PROJECT["keypoint_confidence"]},
         "valid_frame_rule": {"min_valid_frames": CFG["min_valid_frames"], "min_valid_ratio": CFG["min_valid_ratio"]},
-        "body_scale": {"shoulder_ratio": 0.70, "min_px": 5.0},
+        "body_scale": {"shoulder_ratio": BODY_SHOULDER_RATIO, "min_px": BODY_SCALE_MIN_PX},
         "train_clip_seconds": {"min": round(min(secs), 2), "median": round(float(np.median(secs)), 2),
                                "max": round(max(secs), 2)},
         "trained_on": f"{', '.join(sorted(df.subject_id.unique()))} ({len(df)} clips, {df.action_id.nunique()} actions x {len(views)} views x {df.subject_id.nunique()} people)"
                       + (f" + new camera {len(extra)} clips" if len(extra) else ""),
         "views": [VIEW_NAMES[v] for v in views],
         "flip_augmentation": flip,
-        "camera_augmentation": {"view_copies": args.view_aug, "crop_copies": args.crop_aug,
-                                "code": "scripts/26_camera_robust.py view_aug, scripts/24_geo_augment.py crop"},
         "extra_training_clips": int(len(extra)),
         "evaluation_train_S01_S03": ev,
         "sklearn_version": sklearn.__version__,

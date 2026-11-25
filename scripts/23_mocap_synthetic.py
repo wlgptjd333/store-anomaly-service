@@ -21,7 +21,6 @@
 from __future__ import annotations
 
 import argparse
-import importlib.util
 import json
 import re
 import sys
@@ -33,21 +32,18 @@ import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+from src.schema import ANGLES, BODY40, KP  # noqa: E402
+from src.common import load_script  # noqa: E402
 from src.feature_utils import selected_joint_angles  # noqa: E402
 from src.team_feature_utils import normalize_by_body_scale, team03_features  # noqa: E402
 
-_spec = importlib.util.spec_from_file_location("g", ROOT / "scripts" / "22_gpu_search.py")
-g = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(g)
+g = load_script("22_gpu_search.py")
 
 JSON_DIR = Path.home() / "ai_vision/subject12_vicon_web/output/json"
 OUT_CSV = ROOT / "reports" / "dataset" / "mocap_synthetic_whole.csv"
 PERFORMER_SUBJECT = "S03"          # 이 저장소 번호 (통일 S02). 이 사람이 평가 쪽이면 합성 데이터 제외
 STEPS = 30
 W, H, VFOV = 1080, 1920, 60.0
-COCO = ["nose", "left_eye", "right_eye", "left_ear", "right_ear", "left_shoulder", "right_shoulder",
-        "left_elbow", "right_elbow", "left_wrist", "right_wrist", "left_hip", "right_hip",
-        "left_knee", "right_knee", "left_ankle", "right_ankle"]
 BONE = {"left_shoulder": "LeftArm", "right_shoulder": "RightArm", "left_elbow": "LeftForeArm",
         "right_elbow": "RightForeArm", "left_wrist": "LeftHand", "right_wrist": "RightHand",
         "left_hip": "LeftUpLeg", "right_hip": "RightUpLeg", "left_knee": "LeftLeg", "right_knee": "RightLeg",
@@ -72,7 +68,7 @@ def load_clip(path: Path) -> tuple[str, np.ndarray]:
         p["nose"] = mid + 0.10 * fwd
         p["left_eye"], p["right_eye"] = p["nose"] + 0.03 * UP - 0.03 * side, p["nose"] + 0.03 * UP + 0.03 * side
         p["left_ear"], p["right_ear"] = mid - 0.075 * side, mid + 0.075 * side
-        frames.append(np.stack([p[k] for k in COCO]))
+        frames.append(np.stack([p[k] for k in KP]))
     X = np.stack(frames)
     span = np.linalg.norm(X[:, 9] - X[:, 10], axis=1)          # 양손 사이
     arms_level = np.abs(X[:, 9, 1] - X[:, 5, 1]) < 0.15         # 손목이 어깨 높이
@@ -128,7 +124,7 @@ def frame_values(xy: np.ndarray) -> np.ndarray | None:
     except (ValueError, ZeroDivisionError, FloatingPointError):
         return None
     team = team03_features(xy, np.ones(17), W, H, 0.5)
-    vals = np.concatenate([np.asarray(body, float).reshape(-1), [float(ang[n]) for n in g.more.ANGLES],
+    vals = np.concatenate([np.asarray(body, float).reshape(-1), [float(ang[n]) for n in ANGLES],
                            [team["hip_x_img"], team["hip_y_img"]]])
     return vals if np.all(np.isfinite(vals)) else None
 
@@ -157,7 +153,7 @@ def build(json_dir: Path, views: int, seed: int = 0) -> pd.DataFrame:
             row = {"clip_id": f"MOCAP_{action}_Y{int(yaw) % 360:03d}", "subject_id": "MOCAP", "action_id": action,
                    "view": "B" if 135 <= yaw % 360 <= 225 else ("F" if yaw % 360 <= 45 or yaw % 360 >= 315 else "S"),
                    "yaw": round(yaw % 360, 1)}
-            row.update({f"t{i:02d}_{f}": seq[i, j] for i in range(STEPS) for j, f in enumerate(g.FRAME)})
+            row.update({f"t{i:02d}_{f}": seq[i, j] for i in range(STEPS) for j, f in enumerate(BODY40)})
             rows.append(row)
     return pd.DataFrame(rows)
 

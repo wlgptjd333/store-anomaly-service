@@ -19,7 +19,6 @@
 from __future__ import annotations
 
 import argparse
-import importlib.util
 import json
 import sys
 import time
@@ -32,13 +31,13 @@ from torch import nn
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+from src.schema import BODY40, flip_matrix, seq_columns  # noqa: E402
+from src.common import load_script  # noqa: E402
 from src.sequence_extras import add_extras  # noqa: E402
 from src.temporal_cnn import CNN, fit_cnn, predict_cnn, to_seq  # noqa: E402  (서비스와 같은 코드)
 
-_spec = importlib.util.spec_from_file_location("more", ROOT / "scripts" / "20_more_improvements.py")
-more = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(more)
-FRAME, flip_matrix, et, DATASETS = more.FRAME, more.flip_matrix, more.et, more.DATASETS
+more = load_script("20_more_improvements.py")
+et, DATASETS = more.et, more.DATASETS
 
 SPLIT = json.loads((ROOT / "configs" / "subject_split.json").read_text(encoding="utf-8"))["main"]
 TABLES = ROOT / "reports" / "tables"
@@ -128,8 +127,8 @@ def load(name):
 
 def nn_probs(arch, Xtr, ytr, Xte, seed, steps, cfg):
     n_cls = int(ytr.max()) + 1
-    Str, Ste = to_seq(Xtr, steps, len(FRAME)), to_seq(Xte, steps, len(FRAME))
-    Ste_f = to_seq(flip_matrix(Xte, steps), steps, len(FRAME)) if cfg.get("tta") else None
+    Str, Ste = to_seq(Xtr, steps, len(BODY40)), to_seq(Xte, steps, len(BODY40))
+    Ste_f = to_seq(flip_matrix(Xte, steps), steps, len(BODY40)) if cfg.get("tta") else None
     out = []
     for k in range(cfg.get("ens", 1)):
         s = seed + 1000 * k                               # k=0 은 21번과 같은 난수, 나머지는 겹치지 않게
@@ -144,7 +143,7 @@ def nn_probs(arch, Xtr, ytr, Xte, seed, steps, cfg):
 
 def fold(name, cfg, tr, te, classes, seed, tag):
     df, steps = load(cfg["data"])
-    cols = [f"t{i:02d}_{f}" for i in range(steps) for f in FRAME]
+    cols = seq_columns(steps)
     lab = {c: i for i, c in enumerate(classes)}
     Xtr = tr[cols].to_numpy(float)
     Xtr = np.vstack([Xtr, flip_matrix(Xtr, steps)])
@@ -152,8 +151,8 @@ def fold(name, cfg, tr, te, classes, seed, tag):
     Xte = te[cols].to_numpy(float)
     key = (cfg["data"], seed, tag)
     if key not in _et_cache:
-        m = et(seed).fit(add_extras(Xtr, steps, len(FRAME), EXTRAS), ytr)
-        _et_cache[key] = m.predict_proba(add_extras(Xte, steps, len(FRAME), EXTRAS))
+        m = et(seed).fit(add_extras(Xtr, steps, len(BODY40), EXTRAS), ytr)
+        _et_cache[key] = m.predict_proba(add_extras(Xte, steps, len(BODY40), EXTRAS))
     p_et = _et_cache[key]
     p_nn = nn_probs(cfg.get("arch", "cnn"), Xtr, ytr, Xte, seed, steps, cfg)
     if cfg.get("extra_arch"):

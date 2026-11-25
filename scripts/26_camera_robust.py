@@ -20,7 +20,6 @@
 from __future__ import annotations
 
 import argparse
-import importlib.util
 import sys
 import time
 from pathlib import Path
@@ -30,27 +29,22 @@ import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+from src.schema import ANGLES, BODY40, KP, flip_matrix, seq_columns  # noqa: E402
+from src.common import load_script  # noqa: E402
 from src.feature_utils import selected_joint_angles  # noqa: E402
 from src.sequence_extras import add_extras  # noqa: E402
 from src.team_feature_utils import BODY_SHOULDER_RATIO  # noqa: E402
 from src.temporal_cnn import fit_cnn, predict_cnn, to_seq  # noqa: E402
 
 
-def _load(name, file):
-    spec = importlib.util.spec_from_file_location(name, ROOT / "scripts" / file)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
 
-
-g = _load("g", "22_gpu_search.py")
-aug24 = _load("aug24", "24_geo_augment.py")
-FRAME, STEPS = g.FRAME, 30
-IX = {f: i for i, f in enumerate(FRAME)}
-KP = aug24.KP
+g = load_script("22_gpu_search.py")
+aug24 = load_script("24_geo_augment.py")
+STEPS = 30
+IX = {f: i for i, f in enumerate(BODY40)}
 XS, YS = [IX[f"bn_{k}_x"] for k in KP], [IX[f"bn_{k}_y"] for k in KP]
 POS = [IX["hip_x_img"], IX["hip_y_img"]]
-ANG = [IX[a] for a in g.more.ANGLES]
+ANG = [IX[a] for a in ANGLES]
 LS, RS, LH, RH = (KP.index(k) for k in ("left_shoulder", "right_shoulder", "left_hip", "right_hip"))
 
 CONFIGS = {
@@ -71,7 +65,7 @@ CONFIGS = {
 
 def view_aug(X: np.ndarray, copies: int, rng) -> np.ndarray:
     """(n, steps×40) → 시점 바꾼 사본 (copies×n). 클립마다 같은 배율 (카메라는 클립 내내 고정)."""
-    seq = X.reshape(len(X), STEPS, len(FRAME))
+    seq = X.reshape(len(X), STEPS, len(BODY40))
     out = []
     for _ in range(copies):
         A = seq.copy()
@@ -84,7 +78,7 @@ def view_aug(X: np.ndarray, copies: int, rng) -> np.ndarray:
             A[n][:, XS], A[n][:, YS] = P[..., 0], P[..., 1]
             for t in range(STEPS):
                 ang = selected_joint_angles(P[t])
-                A[n][t, ANG] = [float(ang[a]) for a in g.more.ANGLES]
+                A[n][t, ANG] = [float(ang[a]) for a in ANGLES]
         out.append(A.reshape(len(X), -1))
     return np.vstack(out)
 
@@ -105,19 +99,19 @@ def make_train(tr: pd.DataFrame, cfg: dict, seed: int, syn: pd.DataFrame | None,
         parts.append(aug24.augment(df, ("crop",), cfg["crop"], STEPS, seed)[cols].to_numpy(float))
         ys.append(np.tile(y, cfg["crop"]))
     X, y = np.vstack(parts), np.concatenate(ys)
-    return np.vstack([X, g.flip_matrix(X, STEPS)]), np.concatenate([y, y])
+    return np.vstack([X, flip_matrix(X, STEPS)]), np.concatenate([y, y])
 
 
 def keep_cols(X: np.ndarray, nopos: bool) -> tuple[np.ndarray, int]:
     if not nopos:
-        return X, len(FRAME)
-    keep = [i for i in range(len(FRAME)) if i not in POS]
-    return X.reshape(len(X), STEPS, len(FRAME))[:, :, keep].reshape(len(X), -1), len(keep)
+        return X, len(BODY40)
+    keep = [i for i in range(len(BODY40)) if i not in POS]
+    return X.reshape(len(X), STEPS, len(BODY40))[:, :, keep].reshape(len(X), -1), len(keep)
 
 
 def fit_predict(cfg, tr, tests, classes, seed, syn):
     """학습 한 번 → 여러 평가 세트 확률. ExtraTrees + 1D-CNN 폭 128 난수 3개 평균 (서비스와 같은 계산)."""
-    cols = [f"t{i:02d}_{f}" for i in range(STEPS) for f in FRAME]
+    cols = seq_columns(STEPS)
     lab = {c: i for i, c in enumerate(classes)}
     Xtr, ytr = make_train(tr, cfg, seed, syn, cols, lab)
     Xtr, nf = keep_cols(Xtr, cfg.get("nopos", False))

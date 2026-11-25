@@ -23,14 +23,16 @@
 """
 from __future__ import annotations
 
-import importlib.util
 import json
+import sys
 from pathlib import Path
 
 import pandas as pd
 from sklearn.metrics import accuracy_score, f1_score
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from src.common import load_script  # noqa: E402
 MAP = pd.read_csv(ROOT / "configs" / "unified_label_map.csv", encoding="utf-8-sig", dtype=str).fillna("")
 SPLIT = json.loads((ROOT / "configs" / "subject_split.json").read_text(encoding="utf-8"))
 TABLES = ROOT / "reports" / "tables"
@@ -38,9 +40,7 @@ SPLITS = ROOT / "reports" / "splits"
 DATASET = ROOT / "reports" / "dataset"
 OUT = ROOT / "reports" / "unified"
 
-_spec = importlib.util.spec_from_file_location("train14", ROOT / "scripts" / "14_train_baseline.py")
-train14 = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(train14)
+train14 = load_script("14_train_baseline.py")
 
 
 def table(kind: str, col: str = "unified_id") -> dict[str, str]:

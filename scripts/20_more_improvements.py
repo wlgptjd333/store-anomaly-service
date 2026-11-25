@@ -39,15 +39,11 @@ from sklearn.svm import SVC
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+from src.schema import BODY40, flip_matrix, seq_columns  # noqa: E402
 from src.sequence_extras import add_extras  # noqa: E402
 
 SPLIT = json.loads((ROOT / "configs" / "subject_split.json").read_text(encoding="utf-8"))["main"]
 TABLES = ROOT / "reports" / "tables"
-KP = ["nose", "left_eye", "right_eye", "left_ear", "right_ear", "left_shoulder", "right_shoulder",
-      "left_elbow", "right_elbow", "left_wrist", "right_wrist", "left_hip", "right_hip",
-      "left_knee", "right_knee", "left_ankle", "right_ankle"]
-ANGLES = ["left_elbow_angle", "right_elbow_angle", "left_knee_angle", "right_knee_angle"]
-FRAME = [f"bn_{k}_{a}" for k in KP for a in "xy"] + ANGLES + ["hip_x_img", "hip_y_img"]
 EXTRAS = ["velocity", "stats"]
 SEEDS = (42, 0, 1)
 
@@ -60,26 +56,6 @@ DATASETS = {   # 이름: (파일, 단계 수)
     "45단계": ("reports/experiments/steps45/sequence_dataset_whole.csv", 45),
     "5 Frame 이동 평균": ("reports/experiments/smooth5/sequence_dataset_whole.csv", 30),
 }
-
-
-def swap(n: str) -> str:
-    return n.replace("left_", "TMP_").replace("right_", "left_").replace("TMP_", "right_")
-
-
-def flip_matrix(X: np.ndarray, steps: int) -> np.ndarray:
-    """(n, steps × 40) 좌우 반전 — 17번 flip 과 같은 규칙 (x → -x, 왼쪽·오른쪽 관절·각도 바꿈, 골반 x → 1 - x)"""
-    seq = X.reshape(len(X), steps, len(FRAME))
-    idx = {f: i for i, f in enumerate(FRAME)}
-    out = np.empty_like(seq)
-    for f, i in idx.items():
-        src = seq[:, :, idx[swap(f)]]
-        if f.startswith("bn_") and f.endswith("_x"):
-            out[:, :, i] = -src
-        elif f == "hip_x_img":
-            out[:, :, i] = 1 - src
-        else:
-            out[:, :, i] = src
-    return out.reshape(len(X), -1)
 
 
 def time_crop(X: np.ndarray, steps: int, rng, copies: int, cut: float = 0.15) -> np.ndarray:
@@ -111,7 +87,7 @@ def run(Xtr, ytr, Xte, steps, seed, model="et", tta=False, crop=0, **kw):
         rng = np.random.default_rng(seed)
         Xtr_all = np.vstack([Xtr_all, time_crop(Xtr_all, steps, rng, crop)])
         ytr_all = np.concatenate([ytr_all] * (crop + 1))
-    F = lambda X: add_extras(X, steps, len(FRAME), EXTRAS)  # noqa: E731
+    F = lambda X: add_extras(X, steps, len(BODY40), EXTRAS)  # noqa: E731
     models = [et(seed, **kw)] if model == "et" else [et(seed), svm(seed)]
     probs = []
     for m in models:
@@ -133,7 +109,7 @@ def load(name):
 
 
 def cv(df, steps, subjects, seed, **kw):
-    cols = [f"t{i:02d}_{f}" for i in range(steps) for f in FRAME]
+    cols = seq_columns(steps)
     out = []
     for s in subjects:
         tr, te = df[df.subject_id.isin([x for x in subjects if x != s])], df[df.subject_id == s]

@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import csv
 import json
+import sys
 from pathlib import Path
 
 import matplotlib
@@ -42,6 +43,8 @@ from sklearn.ensemble import RandomForestClassifier  # noqa: E402
 from sklearn.metrics import accuracy_score, confusion_matrix, f1_score, precision_recall_fscore_support  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from src.schema import ANGLES, BODY40, KP, POS  # noqa: E402
 CFG = json.loads((ROOT / "configs" / "baseline_config.json").read_text(encoding="utf-8"))
 SPLIT = json.loads((ROOT / "configs" / "subject_split.json").read_text(encoding="utf-8"))
 DATA = ROOT / "reports" / "dataset"
@@ -51,15 +54,10 @@ STEPS = CFG["sequence_steps"]
 # 기준 모델·문서 숫자는 정면·측면 170개 기준. 뒷모습(B, 11/23 재촬영)은 18번에서 따로 비교한다.
 BASE_VIEWS = ("F", "S")
 
-KP = ["nose", "left_eye", "right_eye", "left_ear", "right_ear", "left_shoulder", "right_shoulder",
-      "left_elbow", "right_elbow", "left_wrist", "right_wrist", "left_hip", "right_hip",
-      "left_knee", "right_knee", "left_ankle", "right_ankle"]
-ANGLES = ["left_elbow_angle", "right_elbow_angle", "left_knee_angle", "right_knee_angle"]
-POS = ["hip_x_img", "hip_y_img"]
 FSETS = {
     "course38": [f"{k}_{a}" for k in KP for a in "xy"] + ANGLES,
     "course34": [f"{k}_{a}" for k in KP for a in "xy"],
-    "body40": [f"bn_{k}_{a}" for k in KP for a in "xy"] + ANGLES + POS,
+    "body40": BODY40,
     "body38": [f"bn_{k}_{a}" for k in KP for a in "xy"] + ANGLES,
     "body36": [f"bn_{k}_{a}" for k in KP for a in "xy"] + POS,
 }

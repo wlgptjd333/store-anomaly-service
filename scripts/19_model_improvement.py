@@ -19,9 +19,9 @@
 """
 from __future__ import annotations
 
-import importlib.util
 import json
 import time
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -32,21 +32,18 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from src.schema import BODY40  # noqa: E402
+from src.common import load_script  # noqa: E402
 SPLIT = json.loads((ROOT / "configs" / "subject_split.json").read_text(encoding="utf-8"))["main"]
 TABLES = ROOT / "reports" / "tables"
 
 
-def load(name: str, file: str):
-    spec = importlib.util.spec_from_file_location(name, ROOT / "scripts" / file)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
 
-
-t15 = load("t15", "15_export_service_model.py")
-STEPS, FRAME, COLUMNS = t15.STEPS, t15.FRAME_FEATURES, t15.COLUMNS
-F = len(FRAME)
-POS_IDX = [FRAME.index("hip_x_img"), FRAME.index("hip_y_img")]
+t15 = load_script("15_export_service_model.py")
+STEPS, COLUMNS = t15.STEPS, t15.COLUMNS
+F = len(BODY40)
+POS_IDX = [BODY40.index("hip_x_img"), BODY40.index("hip_y_img")]
 
 
 def features(X: np.ndarray, kind: str) -> np.ndarray:
