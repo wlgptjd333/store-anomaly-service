@@ -1,0 +1,9 @@
+# 빌드 위치가 저장소 맨 위라서, 이미지에 넣을 것만 고른다 (학습 데이터·영상 11GB 가 빌드로 넘어가지 않게)
+*
+!ai_service/
+!training/src/
+ai_service/src
+**/.venv
+**/__pycache__
+**/*.pyc
+ai_service/check_predict.py

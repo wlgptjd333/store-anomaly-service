@@ -15,5 +15,5 @@ ignore = [
 
 [lint.per-file-ignores]
 "**/tests.py" = ["S105", "S106"]          # 테스트용 비밀번호
-# 데이터 저장소(unmanned-store-anomaly)와 같아야 하는 파일 — 고치려면 거기서 고치고 복사
+# 학습 코드 링크 (ai_service/src → training/src). training/ 안은 training/pyproject.toml 의 기준을 씀
 "ai_service/src/*" = ["UP", "C4", "B905", "SIM"]

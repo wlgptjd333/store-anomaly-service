@@ -79,7 +79,7 @@ flowchart LR
 | 1 | `routers/predictions.py` `predict_video` | 확장자·크기 검사 → 임시 파일로 저장 → 끝나면 지움 | — |
 | 2 | `services/pose_pipeline.py` `extract_tracks` | 영상을 Frame 단위로 읽음. 60fps 는 30fps 로 줄임, 최대 60초 | 학습 03번과 같은 Pose 값(`project.json`) |
 | 3 | `pose_pipeline.track_people` | YOLO11n-pose + ByteTrack → Frame 안 사람마다 `Person(track_id, 관절, 신뢰도, 상자, 40값, 유효 여부)` | 실시간 보기도 **같은 함수** |
-| 4 | `pose_pipeline.frame_features` (+ `src/feature_utils`, `src/team_feature_utils`) | 몸 크기 정규화 관절 34 + 팔꿈치·무릎 각도 4 + 골반 화면 위치 2 = **body40** | 데이터 저장소 `src/` 를 그대로 복사 (`update_model.sh` 가 같은지 확인) |
+| 4 | `pose_pipeline.frame_features` (+ `src/feature_utils`, `src/team_feature_utils`) | 몸 크기 정규화 관절 34 + 팔꿈치·무릎 각도 4 + 골반 화면 위치 2 = **body40** | 학습과 같은 `training/src/` 를 그대로 씀 (`ai_service/src` 는 링크, 이미지에는 Dockerfile 이 복사) (`update_model.sh` 가 같은지 확인) |
 | 5 | `TrackData.add` | 사람(Track ID)별로 시간·40값·유효 여부를 쌓음 | — |
 | 6 | `services/action_inference.py` `predict_tracks` → `predict_track` | 1초 미만으로 보인 Track, **관절 Confidence 평균 0.4 미만 Track(의자·가방 같은 물체)** 은 판단하지 않음 (11/24, 진짜 사람은 학습 영상 최저 0.77 · 서비스 기록 최저 0.64, 물체는 0.08~0.34). 나머지는 보인 시간이 8초 이하면 창 1개, 길면 8초 창을 4초씩 밀며 여러 개 (`make_windows`) | 학습은 영상 전체(whole) 1개 |
 | 7 | `action_inference.resample` | 창 안의 유효 Frame 만 → **30단계**로 보간 (유효 Frame 10개·50% 미만인 창은 버림) | 학습 13번 resample 과 같음 |
@@ -163,7 +163,7 @@ stateDiagram-v2
 
 | 한 곳 | 전에는 | 지금 쓰는 곳 | 확인 |
 |---|---|---|---|
-| `ai_service/src/schema.py` (데이터 저장소 `src/schema.py` 복사) | 관절 17개·각도 4개·body40 이름을 `pose_pipeline` 이 따로 정의 (데이터 저장소는 7개 스크립트가 각자) | `pose_pipeline`·`model_loader` 검사, 학습 스크립트 전부. `update_model.sh` 가 두 파일이 같은지 확인 | 예전 이름 목록과 같음, 모델 가중치까지 그대로 재현 |
+| `training/src/schema.py` (AI 서버도 같은 파일) | 관절 17개·각도 4개·body40 이름을 `pose_pipeline` 이 따로 정의 (학습 스크립트 7개가 각자) | `pose_pipeline`·`model_loader` 검사, 학습 스크립트 전부. `update_model.sh` 가 두 파일이 같은지 확인 | 예전 이름 목록과 같음, 모델 가중치까지 그대로 재현 |
 | `models.AnalysisJob.FINISHED` · `CAPTURING_MESSAGE` · `is_recording` | 끝난 상태를 `is_finished`·대시보드 '진행 중'이 따로, 녹화 문구를 `tasks.py`·`analyses.js` 가 같은 글자로 | 서버가 `is_recording` 을 보내고 JS 는 그 값만 봄 | 테스트 44개 + 화면 |
 | `AnalysisJobQuerySet.with_results` · `running`, `PredictionQuerySet.graded` | `select_related("user").prefetch_related("predictions")` 5곳, '채점 대상' 조건 2곳 | API·대시보드 표·CSV·Admin·`export_clips` | 같은 테스트 |
 | `actions.action_name` · `category_ko` · `ACTION_NAMES` | `ACTION_BY_ID.get(…, {}).get("name_ko", "")` 4곳 | serializer·대시보드·CSV·화면 json | 같은 테스트 |
@@ -183,4 +183,4 @@ stateDiagram-v2
 | `실패: 카메라 …에 연결하지 못했습니다` | 휴대폰 IP Webcam 앱이 켜져 있나, 카메라 주소 관리의 주소·연결 확인 |
 | 예측이 이상함 (눕기로 나옴 등) | 결과 화면 영상을 직접 재생해 봄 → 영상이 돌아가 있으면 카메라 '화면 회전', 동작이 녹화 전에 끝났으면 '이 장면 저장' 사용 |
 | 영상 칸이 검거나 "재생할 수 없는 형식" | `docker compose logs celery \| grep 재생용`, 옛 기록이면 `docker compose exec celery python manage.py make_playback` |
-| 결과가 학습 때와 다름 | `update_model.sh` 로 `src/` 와 모델 파일이 데이터 저장소와 같은지 (README 6) |
+| 결과가 학습 때와 다름 | 모델 파일이 `training/artifacts/service` 와 같은지 (`update_model.sh`), Pose 모델 이름이 `training_info.json` 과 `project.json` 에서 같은지 |

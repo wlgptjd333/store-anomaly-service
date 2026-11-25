@@ -25,6 +25,7 @@ exports/
 *.jpeg
 *.png
 !docs/images/*.png
+!training/docs/images/*.png
 
 # Pose 가중치는 Docker 이미지 만들 때 받는다 (Ultralytics 배포 파일)
 *.pt

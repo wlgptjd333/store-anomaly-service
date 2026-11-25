@@ -8,7 +8,7 @@ PY=${PY:-backend/.venv/bin/python}
 case $PY in */*) PY="$PWD/$PY";; esac          # 아래에서 backend/ 로 들어가도 찾게
 RUFF=${RUFF:-$(command -v ruff || echo "$PY -m ruff")}
 
-echo "== ruff (ruff.toml)";               $RUFF check backend ai_service scripts
+echo "== ruff (ruff.toml)";               $RUFF check backend ai_service scripts training/src training/scripts
 if command -v node >/dev/null; then
   echo "== JS 문법";                       for f in backend/static/js/*.js; do node --check "$f"; done
 fi

@@ -1,11 +1,11 @@
 """모델이 예측하는 17개 동작 — 3팀 통일 번호·이름 (2026-11-24 부터).
 
 AI 서버의 training_info.json(class_info)과 같은 목록이다. Django 는 화면 표시·예상 동작 선택·대시보드 집계에만 쓴다.
-번호·이름 원본: 데이터 저장소 unmanned-store-anomaly 의 configs/unified_label_map.csv.
+번호·이름 원본: training/configs/unified_label_map.csv.
 그 저장소 안(영상 이름·실험 표)은 예전 번호(A01..A17)를 그대로 쓰고, 대응은 REPO_ID 로 남긴다.
 11/24 전에 저장된 기록은 migration 0004 가 새 번호·이름으로 바꿨다.
 """
-# (통일 번호, action_label, 한글 이름, 분류, 데이터 저장소 번호)
+# (통일 번호, action_label, 한글 이름, 분류, 학습 데이터 번호)
 ACTIONS = [
     ("A001", "kiosk_tap", "키오스크 두드리기", "property_damage", "A01"),
     ("A002", "throw_one_hand", "한손 물건 던지기", "property_damage", "A02"),

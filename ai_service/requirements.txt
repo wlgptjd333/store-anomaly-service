@@ -1,4 +1,4 @@
-# 학습 환경(unmanned-store-anomaly .venv)과 같은 버전: Joblib 을 만든 scikit-learn·numpy 와 맞춘다
+# 학습 환경(training/.venv)과 같은 버전: Joblib 을 만든 scikit-learn·numpy 와 맞춘다
 scikit-learn==1.9.1
 numpy==2.5.5
 joblib==1.6.0

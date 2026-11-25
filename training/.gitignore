@@ -32,7 +32,7 @@ Thumbs.db
 reports/segments/
 !docs/images/*.png
 
-# 서비스용 모델 (웹 서비스 저장소 store-anomaly-service 에서 사용)
+# 서비스용 모델 (맨 위 scripts/update_model.sh 가 ai_service/models 로 복사해 Git 에 올림)
 artifacts/**/*.joblib
 reports/pose_compare/
 reports/experiments/

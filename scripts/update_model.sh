@@ -1,26 +1,23 @@
 #!/usr/bin/env bash
-# 데이터 저장소(unmanned-store-anomaly)에서 새로 내보낸 모델을 서비스에 넣고, 다시 빌드한 뒤 확인까지 한 번에.
+# training/ 에서 새로 내보낸 모델을 서비스에 넣고, 다시 빌드한 뒤 확인까지 한 번에.
 #
-#   bash scripts/update_model.sh [데이터 저장소 경로] [확인용 영상.mp4]
-#     기본 경로: ~/ai_vision/unmanned-store-anomaly
+#   bash scripts/update_model.sh [확인용 영상.mp4]
 #     DRY_RUN=1 bash scripts/update_model.sh  → 복사·확인까지만 (Docker 빌드 안 함)
 #     영상을 주면 e2e_check.py 로 업로드 → 분석 → 저장까지 확인 (.env 의 DEMO_* 계정 사용)
 #
 # 하는 일
 #   1) 모델 파일 복사: artifacts/service/{action_model.joblib, feature_columns.json, training_info.json, action_cnn.pt(있으면)} → ai_service/models/
-#   2) Feature·모델 코드 6개(schema, pose_utils, feature_utils, team_feature_utils, sequence_extras, temporal_cnn)가 두 저장소에서 같은지 확인, 다르면 데이터 저장소 쪽으로 맞춤
-#      (학습과 추론이 같은 코드로 Feature 를 만들어야 해서 — 다르면 정확도가 소리 없이 떨어짐)
+#   2) Feature·모델 코드는 복사하지 않는다: AI 서버 이미지가 training/src 를 그대로 넣음 (ai_service/src 는 그 링크)
 #   3) training_info.json 의 Pose 모델이 project.json 과 같은지 확인 (다르면 멈춤 — Pose 모델을 바꿨으면 project.json·Dockerfile 도 같이)
 #   4) docker compose up -d --build fastapi, celery 재시작 (모델이 이미지 안에 들어가므로 빌드가 필요)
 #   5) /health 에서 모델 이름·Feature 수·Class 수 확인
 set -euo pipefail
 cd "$(dirname "$0")/.."
-DATA="${1:-$HOME/ai_vision/unmanned-store-anomaly}"
-VIDEO="${2:-}"
-ART="$DATA/artifacts/service"
+VIDEO="${1:-}"
+ART="training/artifacts/service"
 
 for f in action_model.joblib feature_columns.json training_info.json; do
-  test -f "$ART/$f" || { echo "없음: $ART/$f — 데이터 저장소에서 scripts/15_export_service_model.py 를 먼저 실행"; exit 1; }
+  test -f "$ART/$f" || { echo "없음: $ART/$f — training/ 에서 scripts/15_export_service_model.py 를 먼저 실행"; exit 1; }
 done
 
 python3 - "$ART/training_info.json" ai_service/project.json <<'PY'
@@ -35,12 +32,6 @@ PY
 
 cp "$ART"/action_model.joblib "$ART"/feature_columns.json "$ART"/training_info.json ai_service/models/
 if [ -f "$ART/action_cnn.pt" ]; then cp "$ART/action_cnn.pt" ai_service/models/; else rm -f ai_service/models/action_cnn.pt; fi
-for f in schema pose_utils feature_utils team_feature_utils sequence_extras temporal_cnn; do
-  if ! cmp -s "$DATA/src/$f.py" "ai_service/src/$f.py"; then
-    cp "$DATA/src/$f.py" "ai_service/src/$f.py"
-    echo "Feature 코드 갱신: ai_service/src/$f.py (git diff 로 확인)"
-  fi
-done
 
 if [ -n "${DRY_RUN:-}" ]; then echo "DRY_RUN: 복사·확인까지만 (빌드 안 함)"; git status --short ai_service; exit 0; fi
 docker compose up -d --build fastapi
@@ -54,4 +45,4 @@ echo "$H" | python3 -c "import json,sys; m=json.load(sys.stdin)['model']; print(
 if [ -n "$VIDEO" ]; then
   backend/.venv/bin/python scripts/e2e_check.py "$VIDEO"
 fi
-echo "끝. README 의 정확도 표·T01~T10 표와 docs/images 화면 캡처(scripts/capture_screens.py)를 새 숫자로 고친 뒤 커밋하세요."
+echo "끝. README·docs/TESTING.md 의 정확도 표·T01~T10 표와 docs/images 화면 캡처(scripts/capture_screens.py)를 새 숫자로 고친 뒤 커밋하세요."

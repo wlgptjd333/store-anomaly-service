@@ -1,6 +1,6 @@
 """영상 → YOLO Pose + ByteTrack → 사람(Track ID)별 Frame Feature 목록.
 
-Frame 하나의 Feature 는 학습 때(unmanned-store-anomaly scripts/03_build_sequences.py)와 같은 계산을 쓴다.
+Frame 하나의 Feature 는 학습 때(training/scripts/03_build_sequences.py)와 같은 계산을 쓴다.
   body40 = 몸 크기 정규화 17관절 x,y (34) + 팔꿈치·무릎 각도 (4) + 골반 화면 위치 (2)
 유효 Frame 규칙도 학습 때와 같다:
   Pose 있음 · 어깨 폭 정규화 성공(feature_ok) · 몸 크기 정규화 성공(body_feature_ok) · 40개 값이 모두 숫자
@@ -18,7 +18,7 @@ import cv2
 import numpy as np
 
 from src.feature_utils import normalize_by_shoulder_width, selected_joint_angles
-from src.schema import ANGLES, BODY40          # 학습과 같은 파일 (데이터 저장소 src/schema.py 복사본)
+from src.schema import ANGLES, BODY40          # 학습과 같은 파일 (ai_service/src → training/src 링크)
 from src.team_feature_utils import normalize_by_body_scale, team03_features
 
 # YOLO 모델·Tracker 는 요청끼리 공유하면 Track ID 가 섞이므로 영상 한 건씩 처리한다

@@ -1,4 +1,7 @@
-# Unmanned Store Anomaly — 무인 상점 이상행동 인식
+# training/ — 무인 상점 이상행동 인식 모델 만들기
+
+> 이 폴더는 [store-anomaly-service](../README.md) 의 **학습 부분**입니다. 11/25 까지 따로 있던 `unmanned-store-anomaly` 저장소를 커밋 기록째 옮겼습니다 (`git log -- training`).
+> 웹 서비스는 위 폴더의 `backend/`·`ai_service/` 이고, AI 서버는 이 폴더의 `src/` 를 그대로 씁니다.
 
 무인 아이스크림 할인점 CCTV 를 가정하고, 사람의 **2D 자세(Pose)** 로 매장 안 이상행동을 찾는 개인 프로젝트입니다.
 Vision AI 과정 2D 자세추정 수업에서 시작했고, 학습 영상은 3팀 5명이 함께 촬영했습니다 (정리·학습·평가는 개인 작업).
@@ -173,17 +176,21 @@ Sequence CSV (clip 하나 = 파일 하나, 159열)
   | Random Forest 300 | 71.9 | 70.6 | 71.9 |
   | ExtraTrees 1000 + 변화량·요약 통계 | 82.4 | 88.2 | 78.4 |
   | ExtraTrees + 시간 순서 1D-CNN 3개 평균 (11/24 밤, [5-5](docs/BASELINE_EVALUATION.md)) | 90.2 | 98.0 | 82.4 |
-  | **ExtraTrees + 1D-CNN 폭 128 · 3개 평균 (지금 서비스, [5-6](docs/BASELINE_EVALUATION.md))** | **91.7** | **96.1** | **88.2** |
+  | ExtraTrees + 1D-CNN 폭 128 · 3개 평균 (11/24 밤, [5-6](docs/BASELINE_EVALUATION.md)) | 91.7 | 96.1 | 88.2 |
+  | **+ Pose 11m · 현장식 증강 (11/25, 지금 서비스, [5-9](docs/BASELINE_EVALUATION.md))** | **90.0** ¹ | **94.1** | **90.2** |
+
+  ¹ 11/25 부터 4-fold 는 새 구도 5개를 뺀 255개·난수 3개로 다시 잼 (같은 조건의 11/24 모델 89.7). 현장처럼 자르고 반복한 영상은 73.7 → **87.6**
 
   - 같은 30fps 에서 Pose 11n 81.5 · 11s 82.7 · 11m 83.5 — 11m 은 CPU 4배라 11n 유지. 단계 수·떨림 줄이기·TTA·나무 설정·SVM 섞기·시간 자르기 증강은 모두 변동 안
   - 1D-CNN 을 섞으니 뒤 70.6 → 83.3 (4-fold), A13 50 → 92%. GPU 로 20가지를 더 비교(22번)해 폭 128 만 채택, Pose 11m 은 4-fold 94.0 이지만 Test 85.0 · CPU 4배라 보류
+  - 11/25: 현장 영상(바로 시작·반복·오래 서 있기)에 약해 평가부터 현장처럼 바꿈(27번) → Pose 11m + 현장식 증강, 서비스는 GPU 로 ([결정 21](docs/DESIGN_DECISIONS.md))
   - 남은 약한 동작은 A05 밀치기 72% (A03·A04·A09·A15 83%) → 더 올리려면 데이터(새 사람·장소·대각선, 약한 동작 추가 촬영)
 
 ## 실행
 
 ```bash
-git clone https://github.com/wlgptjd333/unmanned-store-anomaly.git
-cd unmanned-store-anomaly
+git clone https://github.com/wlgptjd333/store-anomaly-service.git
+cd store-anomaly-service/training
 uv sync
 source .venv/bin/activate
 
@@ -207,12 +214,13 @@ python scripts/23_mocap_synthetic.py               # VICON 3D 합성 데이터 (
 python scripts/24_geo_augment.py                   # Keypoint 기하 증강 (GPU 약 40분)
 python scripts/25_extra_videos.py --src <영상 폴더> --name s05_newcam   # 새 구도 영상 → 평가용 Sequence
 python scripts/26_camera_robust.py                 # 카메라 구도 강건 비교 (GPU 약 1시간 30분)
-python scripts/15_export_service_model.py --extra-csv reports/extra/s05_newcam/sequence_dataset_whole.csv
-                                                   # 서비스용 모델 → artifacts/service/ (서비스 저장소 scripts/update_model.sh 로 넣음)
+python scripts/27_field_robust.py                  # 현장처럼 자르고 반복한 영상 평가·증강·11m 비교 (GPU 약 25분)
+python scripts/15_export_service_model.py --pose 11m --aug 2 --extra-csv reports/extra/s05_newcam_11m/sequence_dataset_whole.csv
+                                                   # 서비스용 모델 → artifacts/service/ (저장소 맨 위 scripts/update_model.sh 로 넣음)
 python scripts/07_render_overlay.py --subject S04   # YOLO 다시 안 돌림, 영상 1개 약 10초
 ```
 
-`yolo11n-pose.pt` 는 첫 실행 때 Ultralytics 가 자동으로 받습니다.
+`yolo11n-pose.pt`·`yolo11m-pose.pt` 는 첫 실행 때 Ultralytics 가 자동으로 받습니다.
 
 ## 다음 할 일
 
@@ -235,4 +243,4 @@ python scripts/07_render_overlay.py --subject S04   # YOLO 다시 안 돌림, �
 ## 출처
 
 교과10 수업 저장소 [`vision-ai-lab/subject10_pose_action`](https://github.com/wlgptjd333/vision-ai-lab/tree/main/subject10_pose_action) 에서 시작했고,
-3팀 코드는 2026-11-17 이 저장소로 옮겼습니다. 이전 기록은 그쪽 커밋 `b3d6c32`, `3e0e9a5` 에 있습니다.
+3팀 코드는 2026-11-17 `unmanned-store-anomaly` 저장소로 옮겼고(이전 기록은 그쪽 커밋 `b3d6c32`, `3e0e9a5`), 2026-11-25 그 저장소를 기록째 이 폴더로 합쳤습니다.

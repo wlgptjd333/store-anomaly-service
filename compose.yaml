@@ -51,7 +51,9 @@ services:
     restart: unless-stopped
 
   fastapi:
-    build: ./ai_service
+    build:                          # 학습 코드(training/src)도 같이 넣어야 해서 저장소 맨 위에서 빌드
+      context: .
+      dockerfile: ai_service/Dockerfile   # 넣는 파일은 ai_service/Dockerfile.dockerignore 가 정함
     environment: *shared-limits
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,json,sys; sys.exit(0 if json.load(urllib.request.urlopen('http://localhost:8001/health'))['status']=='ok' else 1)"]

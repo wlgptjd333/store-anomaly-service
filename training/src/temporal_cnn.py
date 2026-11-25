@@ -1,4 +1,4 @@
-"""시간 순서 1D-CNN — 학습(unmanned-store-anomaly)과 추론(store-anomaly-service)이 같이 쓰는 파일.
+"""시간 순서 1D-CNN — 학습(training/scripts)과 추론(ai_service)이 같이 쓰는 파일.
 
 서비스 ai_service/src/ 에 그대로 복사한다 (scripts/update_model.sh 가 같은지 확인).
 

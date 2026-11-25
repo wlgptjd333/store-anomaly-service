@@ -3,12 +3,12 @@
 영상을 더 찍거나 학습 방법을 바꿀 때 **이 순서대로만 하면** 처음부터 다시 정리하지 않아도 되게 적은 문서입니다.
 (마지막 확인 2026-11-24 — 영상 255개, ExtraTrees + 변화량·요약 통계, 서비스 Test S05 78.4%)
 
-두 저장소가 나뉘어 있습니다.
+저장소 하나(`store-anomaly-service`, WSL `~/ai_vision/store-anomaly-service`)에 두 부분이 있습니다 (11/25 합침).
 
-| 저장소 | 하는 일 | 위치 (WSL) |
-|---|---|---|
-| `unmanned-store-anomaly` (이 저장소, 데이터 저장소) | 영상 정리 → Pose → 검수 → Dataset → 실험 → 서비스용 모델 내보내기 | `~/ai_vision/unmanned-store-anomaly` |
-| `store-anomaly-service` | Django + FastAPI 웹 서비스. 모델 파일 3개만 받아 씀 | `~/ai_vision/store-anomaly-service` |
+| 폴더 | 하는 일 |
+|---|---|
+| `training/` (이 문서) | 영상 정리 → Pose → 검수 → Dataset → 실험 → 서비스용 모델 내보내기. 가상환경 `training/.venv` (`uv sync`) |
+| 맨 위 (`backend/`, `ai_service/`) | Django + FastAPI 웹 서비스. 모델 파일만 받아 쓰고, Feature 코드는 `training/src` 를 그대로 씀 |
 
 ```text
 영상 ─01─02─03─05─(04 검수)─06─09─(human_qa 판정)─10─11─13 ─┬─ 19·20 실험 (고르기)
@@ -57,7 +57,7 @@ docker compose exec django python manage.py export_clips --labeled-only --since 
 ### 1-2. 목록·복사·검사
 
 ```bash
-cd ~/ai_vision/unmanned-store-anomaly && source .venv/bin/activate
+cd ~/ai_vision/store-anomaly-service/training && source .venv/bin/activate
 python scripts/01_build_manifest.py --copy                       # 목록 + data/rgb/videos/<clip_id>.mp4 복사 (바뀐 것만)
 python scripts/01_build_manifest.py --copy --unified-views T03,T04   # 새 방향도 읽을 때
 python scripts/02_check_videos.py                                # 열림·FPS·길이·끝까지 디코딩
@@ -142,22 +142,22 @@ python scripts/15_export_service_model.py --model rf --extras "" --views FS --no
 - 화면에 Train S01~S03 → Validation S04 / Test S05 정확도가 방향별로 나옴 (기록용, `training_info.json` 에도 저장). 최종 모델은 5명 전부로 학습.
 - 서비스 화면·대시보드에 보이는 번호·이름은 **팀 통일 표기**(A001 `kiosk_tap` 키오스크 두드리기 …): `15` 가 [`configs/unified_label_map.csv`](../configs/unified_label_map.csv) 로 Class 를 바꿔 `training_info.json` 의 `class_info` 에 넣음 (분류는 `configs/action_classes.csv`). 이름을 바꾸려면 `unified_label_map.csv` 를 고치고, 서비스 `backend/analyses/actions.py` 도 같이 (Django 는 그 목록으로 화면·대시보드를 그림). 예전 번호로 내보내기는 `--repo-ids`.
 
-## 4. 서비스에 넣기 (store-anomaly-service)
+## 4. 서비스에 넣기
 
 ```bash
 cd ~/ai_vision/store-anomaly-service
-bash scripts/update_model.sh ~/ai_vision/unmanned-store-anomaly ~/ai_vision/unmanned-store-anomaly/data/rgb/videos/T03_S04_A05_T01_F.mp4
+bash scripts/update_model.sh training/data/rgb/videos/T03_S04_A05_T01_F.mp4
 ```
 
-`update_model.sh` 가 하는 일: 모델 파일 복사(`action_cnn.pt` 포함, 없으면 서비스 쪽도 지움) → Feature·모델 코드(`src/feature_utils.py`, `team_feature_utils.py`, `sequence_extras.py`, `temporal_cnn.py`)가 두 저장소에서 같은지 확인·맞춤 →
+`update_model.sh` 가 하는 일: 모델 파일 복사(`action_cnn.pt` 포함, 없으면 서비스 쪽도 지움) → (Feature·모델 코드는 AI 서버 이미지가 `training/src` 를 그대로 넣어 복사할 것 없음) →
 Pose 모델이 서비스 설정과 같은지 확인 → `docker compose up -d --build fastapi` + celery 재시작 → `/health` 확인 → (영상을 주면) E2E 업로드·분석·저장 확인.
 
 그다음 손으로:
 
 1. 화면 캡처 다시: `scripts/capture_screens.py --success <job> --failure <job> --multi <job>` (Playwright, 얼굴은 S04 만)
-2. 서비스 README: 모델 파일 표, 6장 정확도 표, 7장 T01~T10 표, 한계(약한 동작)
-3. 이 저장소 README "지금까지 결과", `BASELINE_EVALUATION.md`
-4. 두 저장소 커밋 (서비스의 모델 파일은 Git 에 포함, 약 10 MB. `action_cnn.pt` 는 .gitignore 의 `*.pt` 예외로 올라감)
+2. 맨 위 README 6장 정확도 표, `docs/TESTING.md` 의 T01~T10·모델 버전 표·한계(약한 동작)
+3. `training/README.md` "지금까지 결과", `BASELINE_EVALUATION.md`
+4. 커밋 한 번 (서비스의 모델 파일은 Git 에 포함, 약 10 MB. `action_cnn.pt` 는 .gitignore 의 `*.pt` 예외로 올라감)
 5. 모델 종류를 바꿨으면 `판단 불확실` 기준(30%)도 다시 확인: 학습에 없던 사람에서 30% 위쪽 정확도·표시 비율 (Baseline 성능평가 5-5 참고)
 
 **Pose 모델을 바꿀 때만 추가로**: 서비스 `ai_service/project.json` 의 `pose_model`, `ai_service/Dockerfile` 의 가중치 받는 줄(`yolo11n-pose.pt`),

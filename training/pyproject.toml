@@ -1,5 +1,5 @@
 [project]
-name = "unmanned-store-anomaly"
+name = "store-anomaly-training"
 version = "0.1.0"
 description = "Unmanned store abnormal action recognition from 2D pose (team 3)"
 requires-python = ">=3.11"
