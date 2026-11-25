@@ -80,34 +80,29 @@ docker compose exec django python manage.py createsuperuser
 ## 3. 전체 아키텍처
 
 ```mermaid
-flowchart LR
+flowchart TB
     B["브라우저<br/>analyses.js · dashboard.js"]
     CAM["휴대폰 IP Webcam"]
     subgraph compose["compose.yaml — 서비스 5개"]
-        D["django<br/>Django + DRF :8000"]
+        D["django :8000<br/>Django + DRF"]
         R[("redis<br/>작업 대기열")]
         C["celery<br/>Worker"]
-        F["fastapi<br/>AI 추론 :8001 (GPU)"]
+        F["fastapi :8001<br/>AI 추론 (GPU)"]
         P[("postgres")]
-        M[/"media 볼륨<br/>영상 파일"/]
     end
-    B -- "① 분석 요청" --> D
+    B -- "① 분석 요청 · 상태 조회" --> D
     D -- "② 작업 저장" --> P
-    D -- "영상 저장" --> M
     D -- "③ 작업 등록" --> R
-    D -. "작업 번호 · 상태 · 결과" .-> B
     R -- "④ 작업 꺼냄" --> C
-    CAM -- "8초 수집" --> C
-    C -- "⑤ 영상 전송" --> F
-    F -- "⑥ 사람별 예측 JSON" --> C
-    C -- "⑦ 결과 저장 (ORM)" --> P
-    CAM -. "실시간 보기" .-> F
-    F -. "Skeleton 화면" .-> D
+    CAM -- "8초 녹화" --> C
+    C -- "⑤ 영상 → ⑥ 사람별 JSON" --> F
+    C -- "⑦ 결과 저장" --> P
+    CAM -. "실시간 보기 (Skeleton 화면은 django 를 거쳐 브라우저로)" .-> F
 ```
 
 - PostgreSQL 은 **Django ORM 으로만** 씁니다. FastAPI 는 DB 를 모르고 영상을 받아 JSON 만 돌려줍니다.
 - 공개 포트는 django `8000` 하나. fastapi `8001` 은 `127.0.0.1` 에만 열고, 브라우저는 로그인 확인을 거치는 Django 를 통해 실시간 화면을 받습니다.
-- Django 와 Celery 는 같은 이미지(`backend/Dockerfile`)이고 명령만 다릅니다. 업로드 영상은 `media` 볼륨을 함께 씁니다.
+- Django 와 Celery 는 같은 이미지(`backend/Dockerfile`)이고 명령만 다릅니다. 영상 파일은 DB 가 아니라 `media` 볼륨에 두고 둘이 함께 씁니다.
 
 ## 4. DB 설계 (ERD)
 
