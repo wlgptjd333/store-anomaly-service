@@ -80,7 +80,7 @@ docker compose exec django python manage.py createsuperuser
 ## 3. 전체 아키텍처
 
 ```mermaid
-flowchart TB
+flowchart LR
     B["브라우저<br/>analyses.js · dashboard.js"]
     CAM["휴대폰 IP Webcam"]
     subgraph compose["compose.yaml — 서비스 5개"]
