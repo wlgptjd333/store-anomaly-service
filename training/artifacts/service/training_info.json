@@ -1,0 +1,252 @@
+{
+  "model": "ExtraTreesClassifier",
+  "feature_set": "body40",
+  "window": "whole",
+  "train_augmentation": {
+    "kinds": [
+      "cut",
+      "late",
+      "double",
+      "pad"
+    ],
+    "per_clip": 2,
+    "code": "scripts/27_field_robust.py variant"
+  },
+  "sequence_steps": 30,
+  "frame_features": [
+    "bn_nose_x",
+    "bn_nose_y",
+    "bn_left_eye_x",
+    "bn_left_eye_y",
+    "bn_right_eye_x",
+    "bn_right_eye_y",
+    "bn_left_ear_x",
+    "bn_left_ear_y",
+    "bn_right_ear_x",
+    "bn_right_ear_y",
+    "bn_left_shoulder_x",
+    "bn_left_shoulder_y",
+    "bn_right_shoulder_x",
+    "bn_right_shoulder_y",
+    "bn_left_elbow_x",
+    "bn_left_elbow_y",
+    "bn_right_elbow_x",
+    "bn_right_elbow_y",
+    "bn_left_wrist_x",
+    "bn_left_wrist_y",
+    "bn_right_wrist_x",
+    "bn_right_wrist_y",
+    "bn_left_hip_x",
+    "bn_left_hip_y",
+    "bn_right_hip_x",
+    "bn_right_hip_y",
+    "bn_left_knee_x",
+    "bn_left_knee_y",
+    "bn_right_knee_x",
+    "bn_right_knee_y",
+    "bn_left_ankle_x",
+    "bn_left_ankle_y",
+    "bn_right_ankle_x",
+    "bn_right_ankle_y",
+    "left_elbow_angle",
+    "right_elbow_angle",
+    "left_knee_angle",
+    "right_knee_angle",
+    "hip_x_img",
+    "hip_y_img"
+  ],
+  "sequence_extras": [
+    "velocity",
+    "stats"
+  ],
+  "n_features": 2560,
+  "classes": [
+    "A001",
+    "A002",
+    "A003",
+    "A004",
+    "A005",
+    "A006",
+    "A007",
+    "A008",
+    "A009",
+    "A010",
+    "A011",
+    "A012",
+    "A013",
+    "A014",
+    "A015",
+    "A016",
+    "A017"
+  ],
+  "class_info": {
+    "A001": {
+      "label": "kiosk_tap",
+      "name_ko": "키오스크 두드리기",
+      "category": "property_damage",
+      "repo_action_id": "A01"
+    },
+    "A002": {
+      "label": "throw_one_hand",
+      "name_ko": "한손 물건 던지기",
+      "category": "property_damage",
+      "repo_action_id": "A02"
+    },
+    "A003": {
+      "label": "front_kick",
+      "name_ko": "앞차기",
+      "category": "property_damage",
+      "repo_action_id": "A03"
+    },
+    "A004": {
+      "label": "grab_shake",
+      "name_ko": "잡고 흔들기",
+      "category": "property_damage",
+      "repo_action_id": "A04"
+    },
+    "A005": {
+      "label": "push",
+      "name_ko": "밀치기",
+      "category": "violence",
+      "repo_action_id": "A05"
+    },
+    "A006": {
+      "label": "swing",
+      "name_ko": "휘두르기",
+      "category": "violence",
+      "repo_action_id": "A06"
+    },
+    "A007": {
+      "label": "sit_floor",
+      "name_ko": "바닥에 앉기",
+      "category": "loitering",
+      "repo_action_id": "A07"
+    },
+    "A008": {
+      "label": "sit_on_object",
+      "name_ko": "위에 앉기",
+      "category": "loitering",
+      "repo_action_id": "A08"
+    },
+    "A009": {
+      "label": "lie_forward",
+      "name_ko": "앞으로 눕기",
+      "category": "loitering",
+      "repo_action_id": "A09"
+    },
+    "A010": {
+      "label": "lie_backward",
+      "name_ko": "뒤로 눕기",
+      "category": "loitering",
+      "repo_action_id": "A10"
+    },
+    "A011": {
+      "label": "body_slam",
+      "name_ko": "몸통 박치기",
+      "category": "violence",
+      "repo_action_id": "A11"
+    },
+    "A012": {
+      "label": "crouch_take_item",
+      "name_ko": "쪼그려 물건 빼내기",
+      "category": "theft_suspect",
+      "repo_action_id": "A12"
+    },
+    "A013": {
+      "label": "shotgun",
+      "name_ko": "샷건",
+      "category": "property_damage",
+      "repo_action_id": "A13"
+    },
+    "A014": {
+      "label": "vomit",
+      "name_ko": "구토",
+      "category": "emergency",
+      "repo_action_id": "A14"
+    },
+    "A015": {
+      "label": "fall_sideways",
+      "name_ko": "옆으로 쓰러지기",
+      "category": "emergency",
+      "repo_action_id": "A15"
+    },
+    "A016": {
+      "label": "fall_backward",
+      "name_ko": "뒤로 넘어지기",
+      "category": "emergency",
+      "repo_action_id": "A16"
+    },
+    "A017": {
+      "label": "fall_forward",
+      "name_ko": "앞으로 넘어지기",
+      "category": "emergency",
+      "repo_action_id": "A17"
+    }
+  },
+  "class_ids": "unified",
+  "ensemble": {
+    "cnn_file": "action_cnn.pt",
+    "cnn_seeds": [
+      42,
+      0,
+      1
+    ],
+    "cnn_width": 128,
+    "combine": "mean(ExtraTrees, 1D-CNN)",
+    "code": "src/temporal_cnn.py"
+  },
+  "model_params": {
+    "class_weight": "balanced",
+    "max_depth": null,
+    "max_features": "sqrt",
+    "n_estimators": 1000,
+    "random_state": 42
+  },
+  "pose": {
+    "model": "yolo11m-pose.pt",
+    "image_size": 640,
+    "person_confidence": 0.25,
+    "keypoint_confidence": 0.5
+  },
+  "valid_frame_rule": {
+    "min_valid_frames": 10,
+    "min_valid_ratio": 0.5
+  },
+  "body_scale": {
+    "shoulder_ratio": 0.7,
+    "min_px": 5.0
+  },
+  "train_clip_seconds": {
+    "min": 1.6,
+    "median": 5.35,
+    "max": 26.81
+  },
+  "trained_on": "S01, S02, S03, S04, S05 (255 clips, 17 actions x 3 views x 5 people) + new camera 5 clips",
+  "views": [
+    "front",
+    "side",
+    "back"
+  ],
+  "flip_augmentation": true,
+  "extra_training_clips": 5,
+  "evaluation_train_S01_S03": {
+    "validation_S04": {
+      "accuracy": 0.9412,
+      "macro_f1": 0.9406,
+      "clips": 51,
+      "accuracy_front": 0.9412,
+      "accuracy_side": 0.9412,
+      "accuracy_back": 0.9412
+    },
+    "test_S05": {
+      "accuracy": 0.902,
+      "macro_f1": 0.8895,
+      "clips": 51,
+      "accuracy_front": 0.9412,
+      "accuracy_side": 0.8235,
+      "accuracy_back": 0.9412
+    }
+  },
+  "sklearn_version": "1.9.1",
+  "created_at": "2026-11-25T12:05:19"
+}

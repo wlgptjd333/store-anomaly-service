@@ -1,0 +1,5 @@
+﻿window,split,acc_team_repo_ids,acc_unified_ids,f1_team_repo_ids,f1_unified_ids,same_prediction_every_clip
+segment,validation,76.5,76.5,0.749,0.749,True
+segment,test,70.6,70.6,0.685,0.685,True
+whole,validation,73.5,73.5,0.745,0.745,True
+whole,test,61.8,61.8,0.582,0.582,True

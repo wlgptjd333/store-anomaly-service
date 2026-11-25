@@ -1,0 +1,300 @@
+from __future__ import annotations
+
+# ==================================================
+# 01_build_manifest.py
+# 3팀 핸드폰 영상 → Action·Subject·Take·View 를 정해 Manifest 만들기 (4일차 STEP 1)
+# ==================================================
+# 입력: 팀 드라이브의 "교과10 동작 영상/<이름>/<...>/YYYYMMDD_HHMMSS.mp4"
+#   - 한 사람이 동작마다 정면(F) → 측면(S) 순서로 찍힘. 17개 동작을 4명이 돌아가며 촬영.
+#   - 파일 이름의 촬영 시각으로 몇 번째 동작인지 정함 (ACTION_STARTS).
+#   - 가로 영상은 측면. 세로 영상은 같은 동작 안에서 가로 영상이 있으면 정면,
+#     없으면 시간 순서로 정면 → 측면.
+#   - 같은 사람·동작·방향을 다시 찍었으면 Take 번호를 T01, T02 ... 로 붙임.
+#   - 2026-11-23 뒷모습 재촬영: "공유 자료/S0x/S0x_A0xx_T03.mp4" (팀 통일 번호, T03 = 뒤)
+#     → configs/unified_label_map.csv 로 이 저장소 번호로 되돌려 view "B" 로 붙임 (T03_S0x_A0x_T01_B)
+#   - 앞으로 더 찍는 영상도 같은 통일 이름으로 "공유 자료/S0x/" 에 올리면 된다 (docs/RETRAIN_RUNBOOK.md).
+#     --unified-views 로 어떤 방향을 거기서 읽을지 고름 (기본 T03. 정면·측면 T01·T02 는 원본 폴더에서 이미 읽으므로 넣지 않음)
+#     같은 사람·동작·방향을 다시 찍었으면 S0x_A0xx_T0y_2.mp4 처럼 뒤에 _2, _3 → Take T02, T03
+#     대응표에 없는 사람(S06 ..)은 번호를 그대로 쓰고, 새 방향은 unified_label_map.csv 에 view 행을 더하면 됨
+# 출력:
+#   configs/action_classes.csv   17개 동작 정의
+#   configs/clip_manifest.csv    MP4 한 개당 한 행 (이름 없음, 가명 S01~)
+#   data/source_map.csv   clip_id ↔ 원본 경로 (실명 포함, Git 제외)
+#   --copy 를 주면 data/rgb/videos/<clip_id>.mp4 로 복사
+#
+# 실행:
+#   python scripts/01_build_manifest.py               # 목록만 만들기
+#   python scripts/01_build_manifest.py --copy        # 영상 복사까지
+
+import argparse
+import csv
+import re
+import shutil
+import sys
+from collections import Counter, defaultdict
+from datetime import datetime
+from pathlib import Path
+
+import cv2
+
+ROOT = Path(__file__).resolve().parents[1]
+TEAM_DATA = ROOT / "data"
+DEFAULT_SOURCE = "/mnt/d/3팀드라이브/교과10 동작 영상"
+BACK_SOURCE = "/mnt/d/3팀드라이브/공유 자료"
+UNIFIED_MAP = ROOT / "configs" / "unified_label_map.csv"
+# 핸드폰 원본 이름(YYYYMMDD_HHMMSS)만 읽음 — 같은 폴더에 생긴 다른 자료(예: "5일차 우리꺼 영상")는 건너뜀
+PHONE_NAME = re.compile(r"^\d{8}_\d{6}$")
+
+# (action_id, action_label, 한글 이름, 분류) — 교과12 VICON 촬영 동작 17개 문서와 같은 순서
+ACTIONS = [
+    ("A01", "kiosk_slam", "키오스크 내려치기", "property_damage"),
+    ("A02", "one_arm_throw", "한 팔로 물건 던지기", "property_damage"),
+    ("A03", "freezer_front_kick", "냉동고 앞차기", "property_damage"),
+    ("A04", "claw_machine_shake", "뽑기 기계 흔들기", "property_damage"),
+    ("A05", "two_hand_shove", "양손으로 밀치기", "violence"),
+    ("A06", "two_hand_weapon_swing", "도구 들고 양손 휘두르기", "violence"),
+    ("A07", "sit_on_floor_mat", "바닥 매트에 주저앉기", "loitering"),
+    ("A08", "jump_onto_chair_phone", "의자에 뛰어올라 앉아 휴대폰 보기", "loitering"),
+    ("A09", "lie_prone_phone", "엎드려 휴대폰 보기", "loitering"),
+    ("A10", "lie_supine_roll_side", "누워서 휴대폰 보다 옆으로 돌아눕기", "loitering"),
+    ("A11", "body_check", "몸통 박치기", "violence"),
+    ("A12", "kneel_grab_prize", "무릎 꿇고 뽑기 인형 꺼내기", "theft_suspect"),
+    ("A13", "table_slam", "테이블 내려치기", "property_damage"),
+    ("A14", "repeated_vomiting", "연속 구토하기", "emergency"),
+    ("A15", "sleep_against_wall", "벽에 기대어 잠들기", "emergency"),
+    ("A16", "faint_backward", "뒤로 기절하기", "emergency"),
+    ("A17", "trip_fall_forward", "걸려 넘어지기 (앞으로)", "emergency"),
+]
+
+# 2026-11-13 촬영: 동작마다 4명이 차례로 찍은 구간의 시작 시각 (HHMMSS)
+ACTION_STARTS = ["151200", "151640", "152300", "152700", "153150", "153600", "153900", "154500",
+                 "160500", "161330", "161900", "162250", "162630", "164200", "164700", "165030",
+                 "165800"]
+MAIN_SHOOT_DATE = "20261113"
+
+# 따로 늦게 찍은 날: 한 사람이 A01 → A17 순서로 동작마다 2개(정면·측면)씩 연달아 찍음
+#   → 시간 순서 i 번째 영상 = ACTIONS[i // 2]. 영상 수가 정확히 34개가 아니면 멈춤.
+SEQUENTIAL_SHOOT_DATES = {"20261116"}
+
+# 폴더가 잘못된 파일 → 실제 촬영된 사람 (옷차림으로 확인)
+SUBJECT_OVERRIDES = {
+    "20261113_165054.mp4": ("S02", "uploaded in S03 folder; performer is S02 (checked by outfit)"),
+}
+
+
+VIEW_KO = {"F": "정면", "S": "측면", "B": "뒤", "D": "대각선"}
+
+# 라벨 검수(2026-11-17)에서 확인한 실제 촬영 모습 — 이름과 다른 동작만 적음
+FILMED_AS = {
+    "A08": "책상 모서리에 올라가 걸터앉아 휴대폰 보기 (의자 대신 책상, 뛰어오르지 않음)",
+    "A15": "벽에 잠깐 기댔다가 바닥에 무릎 꿇고 손 짚어 엎드려 웅크리기",
+    "A16": "쪼그려 앉았다가 천천히 뒤로 눕기 (실제 기절보다 느림)",
+}
+
+
+def parse_args():
+    p = argparse.ArgumentParser()
+    p.add_argument("--source", default=DEFAULT_SOURCE, help="사람별 폴더가 있는 원본 영상 폴더")
+    p.add_argument("--copy", action="store_true", help="T03 이름으로 data/ 아래에 복사")
+    p.add_argument("--back-source", default=BACK_SOURCE, help="통일 번호(S0x/S0x_A0xx_T0y.mp4) 영상 폴더, 빈 문자열이면 안 씀")
+    p.add_argument("--unified-views", default="T03", help="그 폴더에서 읽을 방향 코드, 쉼표로 (예: T03,T04)")
+    return p.parse_args()
+
+
+def load_subjects(source: Path) -> dict[str, str]:
+    """이름 → S01.. (실명은 data/ 아래 Git 제외 파일에만 둠).
+    처음이면 폴더 이름 순서로 만들고, 나중에 생긴 사람 폴더는 다음 번호(S05..)로 뒤에 붙임
+    — 이미 붙은 번호는 바꾸지 않는다."""
+    path = TEAM_DATA / "subjects.csv"
+    names = sorted(d.name for d in source.iterdir() if d.is_dir() and any(PHONE_NAME.match(m.stem) for m in d.rglob("*.mp4")))
+    known: dict[str, str] = {}
+    if path.exists():
+        with path.open(encoding="utf-8-sig") as f:
+            known = {r["name"]: r["subject_id"] for r in csv.DictReader(f)}
+    new = [n for n in names if n not in known]
+    if new:
+        start = max((int(s[1:]) for s in known.values()), default=0) + 1
+        for i, n in enumerate(new):
+            known[n] = f"S{start + i:02d}"
+            print(f"새 사람 추가: {known[n]}")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("w", newline="", encoding="utf-8-sig") as f:
+            w = csv.writer(f)
+            w.writerow(["subject_id", "name"])
+            w.writerows(sorted(((s, n) for n, s in known.items())))
+    return known
+
+
+def action_of(stamp: str) -> str:
+    if stamp[:8] != MAIN_SHOOT_DATE:
+        raise ValueError(f"본 촬영일이 아닌 영상입니다 (SEQUENTIAL_SHOOT_DATES 확인): {stamp}")
+    hhmmss = stamp[9:15]
+    idx = sum(1 for s in ACTION_STARTS if hhmmss >= s)
+    if idx == 0:
+        raise ValueError(f"촬영 시각이 첫 동작보다 이릅니다: {stamp}")
+    return ACTIONS[idx - 1][0]
+
+
+def is_landscape(path: Path) -> bool:
+    cap = cv2.VideoCapture(str(path))
+    cap.set(cv2.CAP_PROP_POS_FRAMES, int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) // 2)
+    ok, frame = cap.read()
+    cap.release()
+    if not ok:
+        raise RuntimeError(f"Frame 을 읽을 수 없습니다: {path}")
+    h, w = frame.shape[:2]                     # OpenCV 가 회전 정보를 반영한 실제 화면 크기
+    return w > h
+
+
+UNIFIED_NAME = re.compile(r"^(S\d\d)_(A\d{3})_(T\d\d)(?:_(\d+))?$")
+
+
+def back_clips(source: Path, views: list[str]) -> list[dict]:
+    """통일 번호(S0x_A0xx_T0y[_n])로 올라온 영상 (11/23 뒷모습부터). 이름에 다 있어서 순서·시각 추정 없이 번호만 바꾼다."""
+    m = list(csv.DictReader(UNIFIED_MAP.open(encoding="utf-8-sig")))
+    subj = {r["unified_id"]: r["team_repo_id"] for r in m if r["kind"] == "subject"}
+    act = {r["unified_id"]: r["team_repo_id"] for r in m if r["kind"] == "action"}
+    view = {r["unified_id"]: r["team_repo_id"] for r in m if r["kind"] == "view"}
+    bad = [v for v in views if v not in view]
+    if bad:
+        sys.exit(f"unified_label_map.csv 에 없는 방향 {bad} — view 행을 먼저 더하세요 (예: view,D,T04,,대각선,)")
+    out = []
+    for mp4 in sorted(source.glob("S??/S??_A???_T??*.mp4")):
+        g = UNIFIED_NAME.match(mp4.stem)
+        if not g or g[3] not in views:
+            continue
+        s, a, v, n = g.groups()
+        if a not in act:
+            sys.exit(f"대응표에 없는 동작 번호: {mp4.name}")
+        stamp = datetime.fromtimestamp(mp4.stat().st_mtime).strftime("%Y%m%d_%H%M%S")
+        note = f"{VIEW_KO[view[v]]} (unified {mp4.stem})" if view[v] != "B" else f"back view (unified {mp4.stem})"
+        out.append({"path": mp4, "stamp": stamp, "subject_id": subj.get(s, s), "action_id": act[a], "view": view[v],
+                    "take_id": f"T{int(n or 1):02d}", "landscape": False, "note": note})
+    return out
+
+
+def main() -> None:
+    args = parse_args()
+    source = Path(args.source)
+    subjects = load_subjects(source)
+
+    clips = []
+    for person_dir in sorted(d for d in source.iterdir() if d.is_dir() and d.name in subjects):
+        late = defaultdict(list)
+        for mp4 in sorted(m for m in person_dir.rglob("*.mp4") if PHONE_NAME.match(m.stem)):
+            sid, note = subjects[person_dir.name], ""
+            if mp4.name in SUBJECT_OVERRIDES and SUBJECT_OVERRIDES[mp4.name][0] != sid:
+                sid, note = SUBJECT_OVERRIDES[mp4.name]   # 아직 다른 사람 폴더에 있을 때만
+            c = {"path": mp4, "stamp": mp4.stem, "subject_id": sid, "landscape": is_landscape(mp4), "note": note}
+            if mp4.stem[:8] in SEQUENTIAL_SHOOT_DATES:
+                late[mp4.stem[:8]].append(c)
+                continue
+            c["action_id"] = action_of(mp4.stem)
+            clips.append(c)
+        for day, cs in late.items():
+            cs.sort(key=lambda c: c["stamp"])
+            if len(cs) != 2 * len(ACTIONS):
+                sys.exit(f"{day} 촬영분 {len(cs)}개 — 동작 {len(ACTIONS)}개 × 2 가 아니라 순서로 정할 수 없습니다")
+            for i, c in enumerate(cs):
+                c["action_id"] = ACTIONS[i // 2][0]
+                c["note"] = (c["note"] + "; " if c["note"] else "") + f"late shoot {day}"
+            clips.extend(cs)
+
+    # 사람·동작별로 묶어서 정면/측면 정하기
+    groups = defaultdict(list)
+    for c in clips:
+        groups[(c["subject_id"], c["action_id"])].append(c)
+    for key, cs in groups.items():
+        cs.sort(key=lambda c: c["stamp"])
+        has_landscape = any(c["landscape"] for c in cs)
+        for i, c in enumerate(cs):
+            if c["landscape"]:
+                c["view"] = "S"
+            elif has_landscape or len(cs) == 1:
+                c["view"] = "F"
+            else:
+                c["view"] = "F" if i % 2 == 0 else "S"
+        takes = Counter()
+        for c in cs:
+            takes[c["view"]] += 1
+            c["take_id"] = f"T{takes[c['view']]:02d}"
+            if takes[c["view"]] > 1:
+                c["note"] = (c["note"] + "; " if c["note"] else "") + "reshoot"
+
+    if args.back_source:
+        views = [v.strip() for v in args.unified_views.split(",") if v.strip()]
+        back = back_clips(Path(args.back_source), views)
+        clips.extend(back)
+        print(f"통일 번호 영상 {len(back)}개 추가 ({args.back_source}, {','.join(views)})")
+
+    labels = {a[0]: a[1] for a in ACTIONS}
+    rows = []
+    for c in sorted(clips, key=lambda c: (c["subject_id"], c["action_id"], c["view"], c["take_id"])):
+        clip_id = f"T03_{c['subject_id']}_{c['action_id']}_{c['take_id']}_{c['view']}"
+        rows.append({"clip_id": clip_id, "subject_id": c["subject_id"], "action_id": c["action_id"],
+                     "action_label": labels[c["action_id"]], "take_id": c["take_id"], "view": c["view"],
+                     "video_file": f"{clip_id}.mp4", "source_type": "RGB", "review_status": "PENDING",
+                     "note": c["note"], "_src": c["path"], "_stamp": c["stamp"]})
+
+    ids = [r["clip_id"] for r in rows]
+    dup = [k for k, v in Counter(ids).items() if v > 1]
+    if dup:
+        sys.exit(f"clip_id 중복: {dup}")
+
+    # 빠진 정면/측면 표시 (사람 × 동작 × 방향)
+    have = {(r["subject_id"], r["action_id"], r["view"]) for r in rows}
+    views = [v for v in VIEW_KO if any(r["view"] == v for r in rows)]
+    people = sorted(set(subjects.values()) | {r["subject_id"] for r in rows})
+    missing = [(s, a[0], v) for s in people for a in ACTIONS for v in views
+               if (s, a[0], v) not in have]
+
+    cfg = ROOT / "configs"
+    with (cfg / "action_classes.csv").open("w", newline="", encoding="utf-8-sig") as f:
+        w = csv.writer(f)
+        w.writerow(["action_id", "action_label", "name_ko", "category", "filmed_as"])
+        w.writerows([(*a, FILMED_AS.get(a[0], "")) for a in ACTIONS])
+    public = ["clip_id", "subject_id", "action_id", "action_label", "take_id", "view",
+              "video_file", "source_type", "review_status", "note"]
+    with (cfg / "clip_manifest.csv").open("w", newline="", encoding="utf-8-sig") as f:
+        w = csv.DictWriter(f, fieldnames=public, extrasaction="ignore")
+        w.writeheader()
+        w.writerows(rows)
+    with (TEAM_DATA / "source_map.csv").open("w", newline="", encoding="utf-8-sig") as f:
+        w = csv.writer(f)
+        w.writerow(["clip_id", "recorded_at", "source_path"])
+        for r in rows:
+            w.writerow([r["clip_id"], r["_stamp"], str(r["_src"])])
+
+    if args.copy:
+        out = TEAM_DATA / "rgb" / "videos"
+        out.mkdir(parents=True, exist_ok=True)
+        # 원본이 지워지거나 Take 번호가 바뀌면 예전 이름의 복사본은 지움 (원본은 건드리지 않음)
+        keep = {r["video_file"] for r in rows}
+        stale = [p for p in out.glob("*.mp4") if p.name not in keep]
+        for p in stale:
+            p.unlink()
+        if stale:
+            print(f"예전 이름 복사본 {len(stale)}개 정리")
+        for i, r in enumerate(rows, 1):
+            dst = out / r["video_file"]
+            src_stat = r["_src"].stat()
+            if (not dst.exists() or dst.stat().st_size != src_stat.st_size
+                    or int(dst.stat().st_mtime) != int(src_stat.st_mtime)):
+                shutil.copy2(r["_src"], dst)
+            print(f"\r복사 {i}/{len(rows)}", end="", flush=True)
+        print()
+
+    print(f"MP4: {len(rows)}개 / 사람 {len(people)}명 / 동작 {len(ACTIONS)}개")
+    by_subject = Counter((r["subject_id"], r["view"]) for r in rows)
+    for s in people:
+        print(f"  {s}: " + " · ".join(f"{VIEW_KO[v]} {by_subject[(s, v)]}" for v in views))
+    for r in rows:
+        if r["note"]:
+            print(f"  [참고] {r['clip_id']}: {r['note']}")
+    for s, a, v in missing:
+        print(f"  [없음] {s} {a} {VIEW_KO[v]}")
+    print(f"Saved: {cfg / 'clip_manifest.csv'}")
+
+
+if __name__ == "__main__":
+    main()

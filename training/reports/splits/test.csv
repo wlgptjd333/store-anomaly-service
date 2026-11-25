@@ -1,0 +1,52 @@
+﻿clip_id,subject_id,action_id,action_label,take_id,view,sequence_file,seg_start,seg_end,human_note,split
+T03_S05_A01_T01_B,S05,A01,kiosk_slam,T01,B,reports/sequences/T03_S05_A01_T01_B_sequence.csv,0.5,3.53,"뒷모습 11/23 — 촬영자 라벨 + AI 확인(18번 LOSO 예측), 사람 영상 확인 전",test
+T03_S05_A01_T01_F,S05,A01,kiosk_slam,T01,F,reports/sequences/T03_S05_A01_T01_F_sequence.csv,1.33,5.33,자동 QA 통과 (2026-11-18 검토),test
+T03_S05_A01_T01_S,S05,A01,kiosk_slam,T01,S,reports/sequences/T03_S05_A01_T01_S_sequence.csv,1.5,4.53,자동 QA 통과 (2026-11-18 검토),test
+T03_S05_A02_T01_B,S05,A02,one_arm_throw,T01,B,reports/sequences/T03_S05_A02_T01_B_sequence.csv,0.5,2.52,"뒷모습 11/23 — 촬영자 라벨 + AI 확인(18번 LOSO 예측), 사람 영상 확인 전",test
+T03_S05_A02_T01_F,S05,A02,one_arm_throw,T01,F,reports/sequences/T03_S05_A02_T01_F_sequence.csv,1.05,2.93,자동 QA 통과 (2026-11-18 검토),test
+T03_S05_A02_T01_S,S05,A02,one_arm_throw,T01,S,reports/sequences/T03_S05_A02_T01_S_sequence.csv,1.45,3.67,자동 QA 통과 (2026-11-18 검토),test
+T03_S05_A03_T01_B,S05,A03,freezer_front_kick,T01,B,reports/sequences/T03_S05_A03_T01_B_sequence.csv,0.72,2.15,"뒷모습 11/23 — 촬영자 라벨 + AI 확인(18번 LOSO 예측), 사람 영상 확인 전",test
+T03_S05_A03_T01_F,S05,A03,freezer_front_kick,T01,F,reports/sequences/T03_S05_A03_T01_F_sequence.csv,1.25,2.43,자동 QA 통과 (2026-11-18 검토),test
+T03_S05_A03_T01_S,S05,A03,freezer_front_kick,T01,S,reports/sequences/T03_S05_A03_T01_S_sequence.csv,0.93,2.2,자동 QA 통과 (2026-11-18 검토),test
+T03_S05_A04_T01_B,S05,A04,claw_machine_shake,T01,B,reports/sequences/T03_S05_A04_T01_B_sequence.csv,0.1,3.67,"뒷모습 11/23 — 촬영자 라벨 + AI 확인(18번 LOSO 예측), 사람 영상 확인 전",test
+T03_S05_A04_T01_F,S05,A04,claw_machine_shake,T01,F,reports/sequences/T03_S05_A04_T01_F_sequence.csv,1.08,4.42,자동 QA 통과 (2026-11-18 검토),test
+T03_S05_A04_T01_S,S05,A04,claw_machine_shake,T01,S,reports/sequences/T03_S05_A04_T01_S_sequence.csv,0.75,4.25,자동 QA 통과 (2026-11-18 검토),test
+T03_S05_A05_T01_B,S05,A05,two_hand_shove,T01,B,reports/sequences/T03_S05_A05_T01_B_sequence.csv,0.45,2.96,"뒷모습 11/23 — 촬영자 라벨 + AI 확인(18번 LOSO 예측), 사람 영상 확인 전",test
+T03_S05_A05_T01_F,S05,A05,two_hand_shove,T01,F,reports/sequences/T03_S05_A05_T01_F_sequence.csv,1.1,2.38,자동 QA 통과 (2026-11-18 검토),test
+T03_S05_A05_T01_S,S05,A05,two_hand_shove,T01,S,reports/sequences/T03_S05_A05_T01_S_sequence.csv,0.72,2.62,자동 QA 통과 (2026-11-18 검토),test
+T03_S05_A06_T01_B,S05,A06,two_hand_weapon_swing,T01,B,reports/sequences/T03_S05_A06_T01_B_sequence.csv,0.47,2.43,"뒷모습 11/23 — 촬영자 라벨 + AI 확인(18번 LOSO 예측), 사람 영상 확인 전",test
+T03_S05_A06_T01_F,S05,A06,two_hand_weapon_swing,T01,F,reports/sequences/T03_S05_A06_T01_F_sequence.csv,0.72,4.43,자동 QA 통과 (2026-11-18 검토),test
+T03_S05_A06_T01_S,S05,A06,two_hand_weapon_swing,T01,S,reports/sequences/T03_S05_A06_T01_S_sequence.csv,0.48,4.65,자동 QA 통과 (2026-11-18 검토),test
+T03_S05_A07_T01_B,S05,A07,sit_on_floor_mat,T01,B,reports/sequences/T03_S05_A07_T01_B_sequence.csv,0.93,7.23,"뒷모습 11/23 — 촬영자 라벨 + AI 확인(18번 LOSO 예측), 사람 영상 확인 전 · CHECK=앉은 자세 하체 가림(YOLO)",test
+T03_S05_A07_T01_F,S05,A07,sit_on_floor_mat,T01,F,reports/sequences/T03_S05_A07_T01_F_sequence.csv,0.78,8.88,자동 QA 통과 (2026-11-18 검토),test
+T03_S05_A07_T01_S,S05,A07,sit_on_floor_mat,T01,S,reports/sequences/T03_S05_A07_T01_S_sequence.csv,1.4,8.13,자동 QA 통과 (2026-11-18 검토),test
+T03_S05_A08_T01_B,S05,A08,jump_onto_chair_phone,T01,B,reports/sequences/T03_S05_A08_T01_B_sequence.csv,0.87,5.66,"뒷모습 11/23 — 촬영자 라벨 + AI 확인(18번 LOSO 예측), 사람 영상 확인 전",test
+T03_S05_A08_T01_F,S05,A08,jump_onto_chair_phone,T01,F,reports/sequences/T03_S05_A08_T01_F_sequence.csv,0.82,7.11,자동 QA 통과 (2026-11-18 검토),test
+T03_S05_A08_T01_S,S05,A08,jump_onto_chair_phone,T01,S,reports/sequences/T03_S05_A08_T01_S_sequence.csv,0.43,7.96,자동 QA 통과 (2026-11-18 검토),test
+T03_S05_A09_T01_B,S05,A09,lie_prone_phone,T01,B,reports/sequences/T03_S05_A09_T01_B_sequence.csv,1.08,6.58,"뒷모습 11/23 — 촬영자 라벨 + AI 확인(18번 LOSO 예측), 사람 영상 확인 전",test
+T03_S05_A09_T01_F,S05,A09,lie_prone_phone,T01,F,reports/sequences/T03_S05_A09_T01_F_sequence.csv,0.88,8.26,자동 QA 통과 (2026-11-18 검토),test
+T03_S05_A09_T01_S,S05,A09,lie_prone_phone,T01,S,reports/sequences/T03_S05_A09_T01_S_sequence.csv,1.55,8.56,자동 QA 통과 (2026-11-18 검토),test
+T03_S05_A10_T01_B,S05,A10,lie_supine_roll_side,T01,B,reports/sequences/T03_S05_A10_T01_B_sequence.csv,1.12,10.55,"뒷모습 11/23 — 촬영자 라벨 + AI 확인(18번 LOSO 예측), 사람 영상 확인 전",test
+T03_S05_A10_T01_F,S05,A10,lie_supine_roll_side,T01,F,reports/sequences/T03_S05_A10_T01_F_sequence.csv,2.22,13.31,자동 QA 통과 (2026-11-18 검토),test
+T03_S05_A10_T01_S,S05,A10,lie_supine_roll_side,T01,S,reports/sequences/T03_S05_A10_T01_S_sequence.csv,1.0,10.08,자동 QA 통과 (2026-11-18 검토),test
+T03_S05_A11_T01_B,S05,A11,body_check,T01,B,reports/sequences/T03_S05_A11_T01_B_sequence.csv,0.7,2.87,"뒷모습 11/23 — 촬영자 라벨 + AI 확인(18번 LOSO 예측), 사람 영상 확인 전",test
+T03_S05_A11_T01_F,S05,A11,body_check,T01,F,reports/sequences/T03_S05_A11_T01_F_sequence.csv,0.93,4.12,자동 QA 통과 (2026-11-18 검토),test
+T03_S05_A11_T01_S,S05,A11,body_check,T01,S,reports/sequences/T03_S05_A11_T01_S_sequence.csv,1.22,3.93,자동 QA 통과 (2026-11-18 검토),test
+T03_S05_A12_T01_B,S05,A12,kneel_grab_prize,T01,B,reports/sequences/T03_S05_A12_T01_B_sequence.csv,0.73,6.56,"뒷모습 11/23 — 촬영자 라벨 + AI 확인(18번 LOSO 예측), 사람 영상 확인 전",test
+T03_S05_A12_T01_F,S05,A12,kneel_grab_prize,T01,F,reports/sequences/T03_S05_A12_T01_F_sequence.csv,0.83,8.08,자동 QA 통과 (2026-11-18 검토),test
+T03_S05_A12_T01_S,S05,A12,kneel_grab_prize,T01,S,reports/sequences/T03_S05_A12_T01_S_sequence.csv,1.12,8.83,자동 QA 통과 (2026-11-18 검토),test
+T03_S05_A13_T01_B,S05,A13,table_slam,T01,B,reports/sequences/T03_S05_A13_T01_B_sequence.csv,0.37,1.42,"뒷모습 11/23 — 촬영자 라벨 + AI 확인(18번 LOSO 예측), 사람 영상 확인 전",test
+T03_S05_A13_T01_F,S05,A13,table_slam,T01,F,reports/sequences/T03_S05_A13_T01_F_sequence.csv,0.67,4.08,자동 QA 통과 (2026-11-18 검토),test
+T03_S05_A13_T01_S,S05,A13,table_slam,T01,S,reports/sequences/T03_S05_A13_T01_S_sequence.csv,0.6,4.05,자동 QA 통과 (2026-11-18 검토),test
+T03_S05_A14_T01_B,S05,A14,repeated_vomiting,T01,B,reports/sequences/T03_S05_A14_T01_B_sequence.csv,0.18,4.13,"뒷모습 11/23 — 촬영자 라벨 + AI 확인(18번 LOSO 예측), 사람 영상 확인 전 · CHECK=뒤라 코(구토 중요 관절)가 안 보임",test
+T03_S05_A14_T01_F,S05,A14,repeated_vomiting,T01,F,reports/sequences/T03_S05_A14_T01_F_sequence.csv,0.82,3.68,자동 QA 통과 (2026-11-18 검토),test
+T03_S05_A14_T01_S,S05,A14,repeated_vomiting,T01,S,reports/sequences/T03_S05_A14_T01_S_sequence.csv,1.13,5.11,자동 QA 통과 (2026-11-18 검토),test
+T03_S05_A15_T01_B,S05,A15,sleep_against_wall,T01,B,reports/sequences/T03_S05_A15_T01_B_sequence.csv,1.32,8.1,"뒷모습 11/23 — 촬영자 라벨 + AI 확인(18번 LOSO 예측), 사람 영상 확인 전",test
+T03_S05_A15_T01_F,S05,A15,sleep_against_wall,T01,F,reports/sequences/T03_S05_A15_T01_F_sequence.csv,2.67,7.46,자동 QA 통과 (2026-11-18 검토),test
+T03_S05_A15_T01_S,S05,A15,sleep_against_wall,T01,S,reports/sequences/T03_S05_A15_T01_S_sequence.csv,1.37,6.89,자동 QA 통과 (2026-11-18 검토),test
+T03_S05_A16_T01_B,S05,A16,faint_backward,T01,B,reports/sequences/T03_S05_A16_T01_B_sequence.csv,1.23,6.75,"뒷모습 11/23 — 촬영자 라벨 + AI 확인(18번 LOSO 예측), 사람 영상 확인 전",test
+T03_S05_A16_T01_F,S05,A16,faint_backward,T01,F,reports/sequences/T03_S05_A16_T01_F_sequence.csv,1.77,8.41,자동 QA 통과 (2026-11-18 검토),test
+T03_S05_A16_T01_S,S05,A16,faint_backward,T01,S,reports/sequences/T03_S05_A16_T01_S_sequence.csv,1.79,8.22,자동 QA 통과 (2026-11-18 검토),test
+T03_S05_A17_T01_B,S05,A17,trip_fall_forward,T01,B,reports/sequences/T03_S05_A17_T01_B_sequence.csv,1.38,5.58,"뒷모습 11/23 — 촬영자 라벨 + AI 확인(18번 LOSO 예측), 사람 영상 확인 전",test
+T03_S05_A17_T01_F,S05,A17,trip_fall_forward,T01,F,reports/sequences/T03_S05_A17_T01_F_sequence.csv,1.81,5.05,자동 QA 통과 (2026-11-18 검토),test
+T03_S05_A17_T01_S,S05,A17,trip_fall_forward,T01,S,reports/sequences/T03_S05_A17_T01_S_sequence.csv,1.45,4.98,자동 QA 통과 (2026-11-18 검토),test

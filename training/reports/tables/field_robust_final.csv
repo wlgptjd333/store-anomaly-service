@@ -1,0 +1,9 @@
+﻿config,set,cut,double,late,orig,pad,field4
+Pose 11m · motion + 증강,test_S05,86.9,83.7,76.5,90.2,85.6,83.2
+Pose 11m · motion + 증강,validation_S04,92.8,88.2,86.3,91.5,92.2,89.9
+Pose 11m · whole + 증강,test_S05,84.3,86.9,81.0,86.9,80.4,83.2
+Pose 11m · whole + 증강,validation_S04,92.8,92.2,85.6,96.1,90.8,90.4
+whole + 증강 1,test_S05,77.8,73.2,75.2,80.4,62.7,72.2
+whole + 증강 1,validation_S04,93.5,92.2,79.7,97.4,83.0,87.1
+지금 (whole),test_S05,77.8,70.6,68.6,86.3,58.2,68.8
+지금 (whole),validation_S04,87.6,87.6,65.4,96.7,73.2,78.4
