@@ -11,6 +11,8 @@
 live_predict_every_seconds(1초)마다 그 구간을 창 하나로 예측한다 → 학습(whole, 30단계)과 같은 모양.
 
 Pose 모델은 세션마다 따로 불러온다. 업로드 분석과 같은 YOLO 객체를 쓰면 ByteTrack 상태(Track ID)가 섞인다.
+불러오는 곳은 처리 스레드 안이다. 요청 스레드(FastAPI 스레드풀, 요청 뒤에도 살아 있음)에서 만들면
+같은 CPU·카메라에서 Pose 가 25ms → 60ms 대로 느려져 14fps 에 머물렀다 (따로 재면 29~30fps, 11/25 측정).
 """
 from __future__ import annotations
 
@@ -70,7 +72,6 @@ def rotate(frame: np.ndarray, degrees: int) -> np.ndarray:
 
 class LiveSession:
     def __init__(self, camera: str, url: str, bundle, device, rotation: int = 0):
-        from ultralytics import YOLO
         self.id = str(uuid.uuid4())
         self.camera, self.url, self.rotation = camera, url, rotation
         # '이 장면 저장'용: 최근 몇 초의 원본 Frame(회전 후, Skeleton 없음)을 JPEG 로 들고 있는다
@@ -78,7 +79,7 @@ class LiveSession:
         self._clip_lock = threading.Lock()
         self._reset = False
         self.bundle, self.cfg, self.device = bundle, bundle.config, device
-        self.pose = YOLO(str(APP_ROOT / bundle.config["pose_model"]))
+        self.pose = None                                   # 처리 스레드가 불러옴 (모듈 설명 참고)
         self.state, self.message = "connecting", ""
         self.started = self.last_access = time.monotonic()
         self.frame_size = (0, 0)
@@ -202,7 +203,13 @@ class LiveSession:
 
     # ── 처리 스레드 ──
     def _work(self) -> None:
+        from ultralytics import YOLO
         cfg = self.cfg
+        try:
+            self.pose = YOLO(str(APP_ROOT / cfg["pose_model"]))
+        except Exception as exc:
+            self._fail(f"Pose 모델을 불러오지 못했습니다: {type(exc).__name__}")
+            return
         last_seq, last_predict, fps_t, fps_n = 0, 0.0, time.monotonic(), 0
         while not self._stop.is_set():
             now = time.monotonic()
