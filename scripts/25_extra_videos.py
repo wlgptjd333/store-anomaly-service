@@ -41,6 +41,8 @@ def main() -> None:
     ap.add_argument("--labels", default=DEFAULT_LABELS, help="파일 이름(확장자 빼고)=동작번호, 쉼표로")
     ap.add_argument("--subject", default="S05")
     ap.add_argument("--view", default="D", help="D = 학습에 없던 새 구도")
+    ap.add_argument("--pose-model", default=None, help="Pose 가중치 (기본: project.json). 예: yolo11m-pose.pt")
+    ap.add_argument("--max-fps", type=float, default=0, help="이 FPS 로 줄여 처리 (0 = 모든 Frame, 11m 학습 데이터는 30)")
     args = ap.parse_args()
 
     labels = dict(x.split("=") for x in args.labels.split(","))
@@ -48,7 +50,8 @@ def main() -> None:
     cfg = load_config()
     base = json.loads(s13.CONFIG.read_text(encoding="utf-8"))
     steps, min_n, min_r = base["sequence_steps"], base["min_valid_frames"], base["min_valid_ratio"]
-    model = YOLO(str(ROOT / cfg["pose_model"]) if (ROOT / cfg["pose_model"]).exists() else cfg["pose_model"])
+    pose = args.pose_model or cfg["pose_model"]
+    model = YOLO(str(ROOT / pose) if (ROOT / pose).exists() else pose)
     device = resolve_device(cfg["device"])
 
     out_dir = ROOT / "reports" / "extra" / args.name
@@ -65,7 +68,7 @@ def main() -> None:
         clip = {"clip_id": f"X_{args.subject}_{aid}_T{seen[aid]:02d}_{args.view}", "subject_id": args.subject,
                 "action_id": aid, "action_label": actions.get(aid, ""), "view": args.view, "source_type": "RGB",
                 "video_file": video.name, "take_id": f"T{seen[aid]:02d}"}
-        _, fr = s03.build(clip, model, cfg, device, cfg["keypoint_confidence"], 0, False)
+        _, fr = s03.build(clip, model, cfg, device, cfg["keypoint_confidence"], 0, False, args.max_fps)
         df = pd.DataFrame(fr)
         t = pd.to_numeric(df["time_sec"], errors="coerce").to_numpy(float)
         vals = df[s13.FRAME_FEATURES].apply(pd.to_numeric, errors="coerce").to_numpy(float)

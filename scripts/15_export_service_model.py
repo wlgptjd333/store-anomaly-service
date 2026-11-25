@@ -22,10 +22,14 @@
   - 11/24 오후 ExtraTrees 1000그루 + 변화량·요약 통계 Feature (19번 실험: S01~S04 4-fold 71.9% → 82.4%)
     · 좌우 반전 복사본은 학습 데이터에만 더한다 (평가는 원본).
   - 11/24 밤 ExtraTrees + 1D-CNN 확률 평균 (21번 실험: 4-fold 82.4 → 88.7, Test S05 78.4 → 83.0)
+  - 11/25 Pose 11m + 현장식 증강 (27번 실험: 바로 시작·중간부터·두 번 반복·오래 서 있기로 바꾼 영상 4-fold 73.7 → 87.6,
+    원래 영상 89.7 → 90.0, 현장 밀치기 영상 6% → 40%). --aug 는 Frame 별 Sequence 에서 영상마다 변형 N개를 무작위로 더함
 
 실행: .venv/bin/python scripts/15_export_service_model.py                                   # 새 구도 영상 없이
+      .venv/bin/python scripts/15_export_service_model.py --pose 11m --aug 2 --extra-csv reports/extra/s05_newcam_11m/sequence_dataset_whole.csv
+                                                                                                # 지금 서비스 (11/25, 11m + 현장식 증강 + 새 구도 5개)
       .venv/bin/python scripts/15_export_service_model.py --extra-csv reports/extra/s05_newcam/sequence_dataset_whole.csv
-                                                                                                # 지금 서비스 (11/24 밤, 새 구도 5개 더함)
+                                                                                                # 11/24 밤 모델 (11n)
       .venv/bin/python scripts/15_export_service_model.py --cnn-seeds ""                       # 11/24 오후 모델 (ExtraTrees 만)
       .venv/bin/python scripts/15_export_service_model.py --model rf --extras "" --cnn-seeds ""   # 11/24 오전 모델
       .venv/bin/python scripts/15_export_service_model.py --model rf --extras "" --views FS --no-flip   # 11/22 모델
@@ -48,6 +52,7 @@ from sklearn.metrics import accuracy_score, f1_score
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+from src.common import load_script  # noqa: E402
 from src.temporal_cnn import CnnEnsemble  # noqa: E402
 from src.schema import BODY40, flip_matrix, seq_columns  # noqa: E402
 from src.sequence_extras import add_extras, extra_names  # noqa: E402
@@ -56,7 +61,8 @@ from src.team_feature_utils import BODY_SCALE_MIN_PX, BODY_SHOULDER_RATIO  # noq
 CFG = json.loads((ROOT / "configs" / "baseline_config.json").read_text(encoding="utf-8"))
 SPLIT = json.loads((ROOT / "configs" / "subject_split.json").read_text(encoding="utf-8"))
 PROJECT = json.loads((ROOT / "configs" / "project.json").read_text(encoding="utf-8"))
-DATA = ROOT / "reports" / "dataset" / "sequence_dataset_whole.csv"
+DATA = {"11n": ROOT / "reports" / "dataset" / "sequence_dataset_whole.csv",
+        "11m": ROOT / "reports" / "pose_compare" / "yolo11m" / "dataset" / "sequence_dataset_whole.csv"}
 OUT = ROOT / "artifacts" / "service"
 UNIFIED_MAP = ROOT / "configs" / "unified_label_map.csv"
 STEPS = CFG["sequence_steps"]
@@ -68,6 +74,10 @@ VIEW_NAMES = {"F": "front", "S": "side", "B": "back"}
 def parse_args():
     ap = argparse.ArgumentParser()
     ap.add_argument("--views", default="FSB", help="학습에 쓸 방향 (F 정면, S 측면, B 뒤)")
+    ap.add_argument("--pose", choices=["11n", "11m"], default="11n",
+                    help="Pose 모델 (11m = 03번 --pose-model yolo11m-pose.pt --max-fps 30 결과, 27번에서 고름)")
+    ap.add_argument("--aug", type=int, default=0,
+                    help="현장식 증강: 영상마다 변형(cut·late·double·pad) 몇 개를 무작위로 더할지 (27번: 2)")
     ap.add_argument("--no-flip", action="store_true", help="좌우 반전 복사본을 더하지 않음")
     ap.add_argument("--model", choices=["et", "rf"], default="et", help="et = ExtraTrees 1000, rf = RandomForest 300")
     ap.add_argument("--extras", default="velocity,stats", help='덧붙일 Feature (velocity, stats). 없으면 ""')
@@ -110,7 +120,7 @@ def main() -> None:
     args = parse_args()
     views, flip = list(args.views), not args.no_flip
     extras = [e for e in args.extras.split(",") if e]
-    df = pd.read_csv(DATA)
+    df = pd.read_csv(DATA[args.pose])
     df = df[df.view.isin(views)].reset_index(drop=True)
     extra = pd.concat([pd.read_csv(ROOT / p) for p in args.extra_csv.split(",") if p.strip()] or [df.iloc[:0]],
                       ignore_index=True)
@@ -133,11 +143,31 @@ def main() -> None:
     assert add_extras(df[COLUMNS].to_numpy(float), STEPS, len(BODY40), extras).shape[1] == len(names)
 
     cnn_seeds = [int(x) for x in args.cnn_seeds.split(",") if x.strip()]
+    frames = {}
+    if args.aug:                                    # 현장식 증강은 Frame 별 Sequence 에서 다시 만든다 (27번과 같은 함수)
+        fr = load_script("27_field_robust.py")
+        frames = {c["clip_id"]: c for c in fr.load_clips(args.pose)}
+        for p in [p for p in args.extra_csv.split(",") if p.strip()]:
+            for cid in pd.read_csv(ROOT / p)["clip_id"]:
+                t, v = fr.read_frames((ROOT / p).parent / "sequences" / f"{cid}_sequence.csv")
+                frames[cid] = {"clip_id": cid, "t": t, "v": v, "seg_start": t[0], "seg_end": t[-1]}
+
+    def augmented(part: pd.DataFrame):
+        rng = np.random.default_rng(42)
+        seqs, ys = [], []
+        for cid, aid in zip(part.clip_id, part.action_id.astype(str), strict=True):
+            c = frames[cid]
+            for k in ["orig", *rng.choice(["cut", "late", "double", "pad"], args.aug, replace=False)]:
+                seqs.append(fr.window(*fr.variant(c, k, rng if k != "orig" else None), "whole"))
+                ys.append(aid)
+        return np.stack(seqs).reshape(len(seqs), -1), np.array(ys)
 
     def train(part: pd.DataFrame):
         """(ExtraTrees, 1D-CNN 묶음 또는 None)"""
         Xb = part[COLUMNS].to_numpy(float)
         yp = part["action_id"].astype(str).to_numpy()
+        if args.aug:
+            Xb, yp = augmented(part)
         if flip:                                   # 좌우 반전 사본은 학습에만 (평가는 원본)
             Xb, yp = np.vstack([Xb, flip_matrix(Xb, STEPS)]), np.concatenate([yp, yp])
         tree = make_model(args.model).fit(add_extras(Xb, STEPS, len(BODY40), extras), yp)
@@ -191,6 +221,8 @@ def main() -> None:
         "model": type(final).__name__,
         "feature_set": "body40",
         "window": "whole",
+        "train_augmentation": ({"kinds": ["cut", "late", "double", "pad"], "per_clip": args.aug,
+                                "code": "scripts/27_field_robust.py variant"} if args.aug else None),
         "sequence_steps": STEPS,
         "frame_features": BODY40,
         "sequence_extras": extras,
@@ -205,7 +237,7 @@ def main() -> None:
                       "combine": "mean(ExtraTrees, 1D-CNN)",
                       "code": "src/temporal_cnn.py"} if final_cnn is not None else None),
         "model_params": params,
-        "pose": {"model": PROJECT["pose_model"], "image_size": PROJECT["image_size"],
+        "pose": {"model": f"yolo{args.pose}-pose.pt", "image_size": PROJECT["image_size"],
                  "person_confidence": PROJECT["person_confidence"],
                  "keypoint_confidence": PROJECT["keypoint_confidence"]},
         "valid_frame_rule": {"min_valid_frames": CFG["min_valid_frames"], "min_valid_ratio": CFG["min_valid_ratio"]},
