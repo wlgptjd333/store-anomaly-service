@@ -1,0 +1,23 @@
+{
+  "method": "logistic_regression",
+  "features": [
+    "p1",
+    "p2",
+    "margin",
+    "log_ratio",
+    "entropy"
+  ],
+  "coef": [
+    0.727818,
+    0.366578,
+    0.36124,
+    2.152227,
+    0.268099
+  ],
+  "intercept": -0.772241,
+  "n_samples": 3060,
+  "base_accuracy": 0.8895,
+  "ece_raw": 0.3648,
+  "ece_calibrated": 0.0055,
+  "source": "scripts/28_team_merge.py --calib +cam+kin86 (S01~S04 4-fold 예측, 난수 3 × 변형 5)"
+}

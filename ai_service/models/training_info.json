@@ -12,6 +12,23 @@
     "per_clip": 2,
     "code": "scripts/27_field_robust.py variant"
   },
+  "camera_augmentation": {
+    "per_clip": 1,
+    "yaw_max_deg": 60.0,
+    "pitch_max_deg": 45.0,
+    "code": "src/camera_augment.py camera_view"
+  },
+  "calibration": {
+    "file": "calibration.json",
+    "features": [
+      "p1",
+      "p2",
+      "margin",
+      "log_ratio",
+      "entropy"
+    ],
+    "source": "scripts/28_team_merge.py --calib +cam+kin86 (S01~S04 4-fold 예측, 난수 3 × 변형 5)"
+  },
   "sequence_steps": 30,
   "frame_features": [
     "bn_nose_x",
@@ -57,9 +74,10 @@
   ],
   "sequence_extras": [
     "velocity",
-    "stats"
+    "stats",
+    "kin86"
   ],
-  "n_features": 2560,
+  "n_features": 2646,
   "classes": [
     "A001",
     "A002",
@@ -231,22 +249,22 @@
   "extra_training_clips": 5,
   "evaluation_train_S01_S03": {
     "validation_S04": {
-      "accuracy": 0.9412,
-      "macro_f1": 0.9406,
+      "accuracy": 0.9216,
+      "macro_f1": 0.9168,
       "clips": 51,
-      "accuracy_front": 0.9412,
+      "accuracy_front": 0.8824,
       "accuracy_side": 0.9412,
       "accuracy_back": 0.9412
     },
     "test_S05": {
       "accuracy": 0.902,
-      "macro_f1": 0.8895,
+      "macro_f1": 0.8965,
       "clips": 51,
       "accuracy_front": 0.9412,
-      "accuracy_side": 0.8235,
-      "accuracy_back": 0.9412
+      "accuracy_side": 0.7647,
+      "accuracy_back": 1.0
     }
   },
   "sklearn_version": "1.9.1",
-  "created_at": "2026-11-25T12:05:19"
+  "created_at": "2026-11-26T11:42:02"
 }

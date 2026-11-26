@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import numpy as np
 
-KINDS = ("velocity", "stats")
+KINDS = ("velocity", "stats", "kin86")
 STATS = ("mean", "std", "min", "max", "range")
 
 
@@ -23,6 +23,9 @@ def extra_names(frame_features: list[str], steps: int, extras: list[str]) -> lis
         names += [f"d{i:02d}_{f}" for i in range(steps - 1) for f in frame_features]
     if "stats" in extras:
         names += [f"{s}_{f}" for s in STATS for f in frame_features]
+    if "kin86" in extras:
+        from .kinematic_summary import KIN86_NAMES
+        names += KIN86_NAMES
     return names
 
 
@@ -40,4 +43,7 @@ def add_extras(X: np.ndarray, steps: int, n_frame: int, extras: list[str]) -> np
     if "stats" in extras:
         lo, hi = seq.min(1), seq.max(1)
         parts += [seq.mean(1), seq.std(1), lo, hi, hi - lo]
+    if "kin86" in extras:
+        from .kinematic_summary import kinematic_summary_batch
+        parts.append(kinematic_summary_batch(X, steps, n_frame))
     return np.hstack(parts)

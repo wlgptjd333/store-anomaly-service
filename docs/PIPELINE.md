@@ -83,7 +83,7 @@ flowchart LR
 | 5 | `TrackData.add` | 사람(Track ID)별로 시간·40값·유효 여부를 쌓음 | — |
 | 6 | `services/action_inference.py` `predict_tracks` → `predict_track` | 1초 미만으로 보인 Track, **관절 Confidence 평균 0.4 미만 Track(의자·가방 같은 물체)** 은 판단하지 않음 (11/24, 진짜 사람은 학습 영상 최저 0.77 · 서비스 기록 최저 0.64, 물체는 0.08~0.34). 나머지는 보인 시간이 8초 이하면 창 1개, 길면 8초 창을 4초씩 밀며 여러 개 (`make_windows`) | 학습은 영상 전체(whole) 1개 |
 | 7 | `action_inference.resample` | 창 안의 유효 Frame 만 → **30단계**로 보간 (유효 Frame 10개·50% 미만인 창은 버림) | 학습 13번 resample 과 같음 |
-| 8 | `services/model_loader.py` `ModelBundle.predict_proba` | ① `src/sequence_extras.add_extras` 로 변화량·요약 통계를 붙여 2,560값 → ExtraTrees ② `src/temporal_cnn` 1D-CNN 3개 → 두 확률의 평균 | 학습 15번 `predict()` 와 같은 계산 |
+| 8 | `services/model_loader.py` `ModelBundle.predict_proba` | ① `src/sequence_extras.add_extras` 로 변화량·요약 통계·움직임 요약 86개(`src/kinematic_summary.py`)를 붙여 2,646값 → ExtraTrees ② `src/temporal_cnn` 1D-CNN 3개 → 두 확률의 평균 | 학습 15번 `predict()` 와 같은 계산 |
 | 9 | `predict_track` | 창별 확률을 평균 → 1위 동작·Confidence·상위 3개, 30% 미만은 `uncertain`, 창별 결과는 `windows` | — |
 | 10 | `predict_video` | 사람 없음 / 너무 짧음은 200 + `message` 로 이유 (실패가 아님) | — |
 

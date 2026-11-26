@@ -24,10 +24,15 @@
   - 11/24 밤 ExtraTrees + 1D-CNN 확률 평균 (21번 실험: 4-fold 82.4 → 88.7, Test S05 78.4 → 83.0)
   - 11/25 Pose 11m + 현장식 증강 (27번 실험: 바로 시작·중간부터·두 번 반복·오래 서 있기로 바꾼 영상 4-fold 73.7 → 87.6,
     원래 영상 89.7 → 90.0, 현장 밀치기 영상 6% → 40%). --aug 는 Frame 별 Sequence 에서 영상마다 변형 N개를 무작위로 더함
+  - 11/26 팀원 모델 장점 섞기 후보 (28번 실험): --cam 카메라 각도 증강, --extras 에 kin86(움직임 요약 86개),
+    --calibration 확률 보정 계수. 후보는 --out artifacts/candidates/<이름> 에 (서비스 모델 교체는 승인 후)
 
 실행: .venv/bin/python scripts/15_export_service_model.py                                   # 새 구도 영상 없이
       .venv/bin/python scripts/15_export_service_model.py --pose 11m --aug 2 --extra-csv reports/extra/s05_newcam_11m/sequence_dataset_whole.csv
                                                                                                 # 지금 서비스 (11/25, 11m + 현장식 증강 + 새 구도 5개)
+      .venv/bin/python scripts/15_export_service_model.py --pose 11m --aug 2 --cam 1 --extra-csv reports/extra/s05_newcam_11m/sequence_dataset_whole.csv \
+          --out artifacts/candidates/<이름> [--extras velocity,stats,kin86] [--calibration artifacts/candidates/<이름>/calibration.json]
+                                                                                                # 11/26 후보 (28번)
       .venv/bin/python scripts/15_export_service_model.py --extra-csv reports/extra/s05_newcam/sequence_dataset_whole.csv
                                                                                                 # 11/24 밤 모델 (11n)
       .venv/bin/python scripts/15_export_service_model.py --cnn-seeds ""                       # 11/24 오후 모델 (ExtraTrees 만)
@@ -52,6 +57,7 @@ from sklearn.metrics import accuracy_score, f1_score
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+from src.camera_augment import PITCH_MAX, YAW_MAX, camera_view  # noqa: E402
 from src.common import load_script  # noqa: E402
 from src.temporal_cnn import CnnEnsemble  # noqa: E402
 from src.schema import BODY40, flip_matrix, seq_columns  # noqa: E402
@@ -78,6 +84,11 @@ def parse_args():
                     help="Pose 모델 (11m = 03번 --pose-model yolo11m-pose.pt --max-fps 30 결과, 27번에서 고름)")
     ap.add_argument("--aug", type=int, default=0,
                     help="현장식 증강: 영상마다 변형(cut·late·double·pad) 몇 개를 무작위로 더할지 (27번: 2)")
+    ap.add_argument("--cam", type=int, default=0,
+                    help="카메라 각도 증강: 영상마다 yaw·pitch 로 줄인 변형 몇 개를 더할지 (28번, src/camera_augment.py)")
+    ap.add_argument("--out", default="", help="저장 폴더 (training 기준). 없으면 artifacts/service")
+    ap.add_argument("--calibration", default="",
+                    help="확률 보정 calibration.json (28번 --calib). 저장 폴더에 복사하고 training_info 에 적음")
     ap.add_argument("--no-flip", action="store_true", help="좌우 반전 복사본을 더하지 않음")
     ap.add_argument("--model", choices=["et", "rf"], default="et", help="et = ExtraTrees 1000, rf = RandomForest 300")
     ap.add_argument("--extras", default="velocity,stats", help='덧붙일 Feature (velocity, stats). 없으면 ""')
@@ -144,7 +155,8 @@ def main() -> None:
 
     cnn_seeds = [int(x) for x in args.cnn_seeds.split(",") if x.strip()]
     frames = {}
-    if args.aug:                                    # 현장식 증강은 Frame 별 Sequence 에서 다시 만든다 (27번과 같은 함수)
+    out_dir = ROOT / args.out if args.out else OUT
+    if args.aug or args.cam:                        # 현장식 증강은 Frame 별 Sequence 에서 다시 만든다 (27번과 같은 함수)
         fr = load_script("27_field_robust.py")
         frames = {c["clip_id"]: c for c in fr.load_clips(args.pose)}
         for p in [p for p in args.extra_csv.split(",") if p.strip()]:
@@ -157,8 +169,14 @@ def main() -> None:
         seqs, ys = [], []
         for cid, aid in zip(part.clip_id, part.action_id.astype(str), strict=True):
             c = frames[cid]
-            for k in ["orig", *rng.choice(["cut", "late", "double", "pad"], args.aug, replace=False)]:
+            kinds = ["orig", *rng.choice(["cut", "late", "double", "pad"], args.aug, replace=False)]
+            for k in kinds:
                 seqs.append(fr.window(*fr.variant(c, k, rng if k != "orig" else None), "whole"))
+                ys.append(aid)
+            for _ in range(args.cam):               # 28번 build_train 과 같은 순서로 난수를 쓴다
+                k = str(rng.choice(kinds))
+                t, v = fr.variant(c, k, rng if k != "orig" else None)
+                seqs.append(fr.window(*camera_view(t, v, rng), "whole"))
                 ys.append(aid)
         return np.stack(seqs).reshape(len(seqs), -1), np.array(ys)
 
@@ -166,7 +184,7 @@ def main() -> None:
         """(ExtraTrees, 1D-CNN 묶음 또는 None)"""
         Xb = part[COLUMNS].to_numpy(float)
         yp = part["action_id"].astype(str).to_numpy()
-        if args.aug:
+        if args.aug or args.cam:
             Xb, yp = augmented(part)
         if flip:                                   # 좌우 반전 사본은 학습에만 (평가는 원본)
             Xb, yp = np.vstack([Xb, flip_matrix(Xb, STEPS)]), np.concatenate([yp, yp])
@@ -207,13 +225,18 @@ def main() -> None:
     final, final_cnn = train(pd.concat([df, extra], ignore_index=True))
     secs = clip_seconds()
 
-    OUT.mkdir(parents=True, exist_ok=True)
-    joblib.dump(final, OUT / "action_model.joblib", compress=3)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    joblib.dump(final, out_dir / "action_model.joblib", compress=3)
     if final_cnn is not None:
-        final_cnn.save(OUT / "action_cnn.pt")
-    elif (OUT / "action_cnn.pt").exists():
-        (OUT / "action_cnn.pt").unlink()          # ExtraTrees 만 내보낼 땐 예전 CNN 을 남기지 않음
-    (OUT / "feature_columns.json").write_text(json.dumps(names, ensure_ascii=False, indent=1), encoding="utf-8")
+        final_cnn.save(out_dir / "action_cnn.pt")
+    elif (out_dir / "action_cnn.pt").exists():
+        (out_dir / "action_cnn.pt").unlink()          # ExtraTrees 만 내보낼 땐 예전 CNN 을 남기지 않음
+    calibration = None
+    if args.calibration:
+        calibration = json.loads((ROOT / args.calibration).read_text(encoding="utf-8"))
+        if (ROOT / args.calibration).resolve() != (out_dir / "calibration.json").resolve():
+            (out_dir / "calibration.json").write_text(json.dumps(calibration, ensure_ascii=False, indent=2), encoding="utf-8")
+    (out_dir / "feature_columns.json").write_text(json.dumps(names, ensure_ascii=False, indent=1), encoding="utf-8")
     classes = [str(c) for c in final.classes_]
     params = {k: v for k, v in final.get_params().items() if k in ("n_estimators", "max_depth", "class_weight",
                                                                     "random_state", "max_features")}
@@ -223,6 +246,10 @@ def main() -> None:
         "window": "whole",
         "train_augmentation": ({"kinds": ["cut", "late", "double", "pad"], "per_clip": args.aug,
                                 "code": "scripts/27_field_robust.py variant"} if args.aug else None),
+        "camera_augmentation": ({"per_clip": args.cam, "yaw_max_deg": YAW_MAX, "pitch_max_deg": PITCH_MAX,
+                                 "code": "src/camera_augment.py camera_view"} if args.cam else None),
+        "calibration": ({"file": "calibration.json", "features": calibration["features"],
+                         "source": calibration.get("source", "")} if calibration else None),
         "sequence_steps": STEPS,
         "frame_features": BODY40,
         "sequence_extras": extras,
@@ -253,9 +280,9 @@ def main() -> None:
         "sklearn_version": sklearn.__version__,
         "created_at": datetime.now().isoformat(timespec="seconds"),
     }
-    (OUT / "training_info.json").write_text(json.dumps(info, ensure_ascii=False, indent=2), encoding="utf-8")
-    size = (OUT / "action_model.joblib").stat().st_size / 1e6
-    print(f"saved {OUT.relative_to(ROOT)}: {info['model']} joblib {size:.1f} MB, {len(names)} features, {len(classes)} classes")
+    (out_dir / "training_info.json").write_text(json.dumps(info, ensure_ascii=False, indent=2), encoding="utf-8")
+    size = (out_dir / "action_model.joblib").stat().st_size / 1e6
+    print(f"saved {out_dir.relative_to(ROOT)}: {info['model']} joblib {size:.1f} MB, {len(names)} features, {len(classes)} classes")
     print("학습 영상 길이(s):", info["train_clip_seconds"])
 
 

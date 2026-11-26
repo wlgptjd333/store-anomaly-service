@@ -198,14 +198,14 @@ sequenceDiagram
 
 ## 6. 사용한 모델과 입력 형식
 
-분류 모델은 영상을 그대로 받지 못합니다. 숫자 2,560개를 받는 분류기라서, 영상에서 사람과 관절을 찾고 **학습 때와 같은 계산**으로 숫자를 만드는 단계가 앞에 있습니다.
+분류 모델은 영상을 그대로 받지 못합니다. 숫자 2,646개를 받는 분류기라서, 영상에서 사람과 관절을 찾고 **학습 때와 같은 계산**으로 숫자를 만드는 단계가 앞에 있습니다.
 
 ```mermaid
 flowchart LR
     A["영상<br/>최대 60초, 30fps 로"] --> B["YOLO11m-pose<br/>+ ByteTrack"]
     B --> C["사람마다 Frame 당 40개<br/>관절 34 · 각도 4 · 위치 2"]
     C --> D["8초 창 → 30단계<br/>(30 × 40)"]
-    D --> E1["ExtraTrees 1000그루<br/>+ 변화량·요약 통계 = 2,560"]
+    D --> E1["ExtraTrees 1000그루<br/>+ 변화량·요약 통계·움직임 요약 86 = 2,646"]
     D --> E2["1D-CNN 3개"]
     E1 --> G["확률 평균 → 동작 · Confidence"]
     E2 --> G
@@ -215,7 +215,7 @@ flowchart LR
 |---|---|
 | 모델 파일 | `ai_service/models/action_model.joblib` (ExtraTrees), `action_cnn.pt` (1D-CNN), `feature_columns.json`, `training_info.json` |
 | Pose | `yolo11m-pose.pt`, imgsz 640, 사람 conf 0.25, 관절 conf 0.5 |
-| 학습 데이터 | 5명 × 17동작 × 정면·측면·뒤 = 255개 + 다른 구도 5개, 좌우 반전 · **현장식 증강**(바로 시작·중간부터·반복·오래 서 있기) |
+| 학습 데이터 | 5명 × 17동작 × 정면·측면·뒤 = 255개 + 다른 구도 5개, 좌우 반전 · **현장식 증강**(바로 시작·중간부터·반복·오래 서 있기) · **카메라 각도 증강**(위·옆에서 본 것처럼) |
 | 입력 영상 | mp4·mov·avi·mkv·webm, 100 MB 이하, 처음 60초까지 |
 | IP Webcam | 관리자가 등록한 카메라만, 8초 수집 (또는 실시간 화면의 최근 8초 저장) |
 | 응답 | `POST /predict/video` → `predictions: [{track_id, action_id, confidence, uncertain, top3, windows}]` |
@@ -226,12 +226,14 @@ flowchart LR
 | 서비스 모델 | 4-fold 원래 영상 | 4-fold 현장처럼 바꾼 영상 | Test S05 |
 |---|---|---|---|
 | 11/24 ExtraTrees + 1D-CNN (Pose 11n) | 89.7% | 73.7% | 88.2% |
-| **11/25 + Pose 11m · 현장식 증강 (지금)** | **90.0%** | **87.6%** | **90.2%** |
+| 11/25 + Pose 11m · 현장식 증강 | 90.0% | 87.6% | 90.2% |
+| **11/26 + 카메라 각도 증강 · 움직임 요약 86개 (지금)** | **91.8%** | **88.2%** | **90.2%** |
 
 ![현장처럼 바꾼 영상에서의 정확도](training/docs/images/field_robust.png)
 
 학습 영상은 "서 있기 → 동작 한 번 → 서 있기"인데, 현장 영상은 바로 시작하거나 반복하거나 오래 서 있습니다.
 평가 영상을 그렇게 바꿔 보니 예전 모델은 67~82% 로 떨어졌고, 학습에도 같은 변형을 무작위로 넣어 해결했습니다 → [결정 21번](training/docs/DESIGN_DECISIONS.md#21-pose-11m--현장식-증강--잘리고-반복된-현장-영상에-맞게-2026-11-25).
+11/26 에는 팀원 모델의 장점(카메라 각도 증강·움직임 요약 86개)을 하나씩 넣어 비교했고, 처음 보는 현장 영상 15개가 14 → 15개 맞음 → [결정 22번](training/docs/DESIGN_DECISIONS.md).
 
 ## 7. 실행 결과와 검증
 
@@ -251,7 +253,7 @@ flowchart LR
 
 | 테스트 | 결과 |
 |---|---|
-| T01 모델 불러오기 | `/health` — ExtraTrees + 1D-CNN · 17 Class · 2,560 Feature · ready |
+| T01 모델 불러오기 | `/health` — ExtraTrees + 1D-CNN · 17 Class · 2,646 Feature · ready |
 | T02 영상 업로드 | `scripts/e2e_check.py`: PENDING → STARTED → SUCCESS, A005 밀치기 일치 |
 | T03 IP Webcam | 휴대폰 640×480 연결 확인 · 8초 녹화 → 분석 SUCCESS · 허용 목록 밖 카메라 400 |
 | T04 사람별 결과 | 2인 영상 → 작업 1건에 Track 1·2 각각 저장 |

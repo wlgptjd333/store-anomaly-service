@@ -116,6 +116,7 @@ Sequence CSV (clip 하나 = 파일 하나, 159열)
 | `scripts/23_mocap_synthetic.py` | 교과12 VICON 3D(17동작, 1명)를 가상 휴대폰 카메라 8·16방향으로 2D 투영 → 학습에만 더해 4-fold 비교 (연기자 본인이 평가 쪽이면 뺌) → `mocap_synthetic_*.csv` |
 | `scripts/24_geo_augment.py` | Keypoint 회전·시간 늘이기·앞뒤 자르기·화면 위치 이동 증강 비교 → `geo_augment_*.csv` |
 | `scripts/25_extra_videos.py` | 학습 목록 밖 영상(새 장소·새 카메라 구도)을 학습과 같은 방식으로 Sequence 로 → `reports/extra/<이름>/` (Git 제외) |
+| `scripts/28_team_merge.py` | 팀원 모델 장점 섞기 (카메라 각도 증강 `src/camera_augment.py` · 움직임 요약 86개 `src/kinematic_summary.py` · 확률 보정) 하나씩 4-fold → `--test` → `--calib` → `team_merge_*` |
 | `scripts/26_camera_robust.py` | 카메라 구도 강건 비교 (골반 위치 빼기·시점 증강·자르기·VICON·새 구도 영상 학습) — 4-fold + 원래 구도 Test + 새 구도 → `camera_robust_*.csv` |
 | `scripts/22_gpu_search.py` | GPU 로 20가지 비교 (1D-CNN 크기·평균 개수·mixup·TTA·TCN·Transformer·Pose 11s/11m·섞는 비율, 4-fold, `--test` 로 확인) → `gpu_search_*.csv` |
 | `scripts/21_temporal_models.py` | 시간 순서 모델 1D-CNN·GRU 와 ExtraTrees 섞기 (4-fold, `--test` 로 Validation·Test 확인, GPU 약 4분) → `temporal_models_*.csv`. 모델 코드는 `src/temporal_cnn.py` (서비스와 같은 파일) |
@@ -177,7 +178,8 @@ Sequence CSV (clip 하나 = 파일 하나, 159열)
   | ExtraTrees 1000 + 변화량·요약 통계 | 82.4 | 88.2 | 78.4 |
   | ExtraTrees + 시간 순서 1D-CNN 3개 평균 (11/24 밤, [5-5](docs/BASELINE_EVALUATION.md)) | 90.2 | 98.0 | 82.4 |
   | ExtraTrees + 1D-CNN 폭 128 · 3개 평균 (11/24 밤, [5-6](docs/BASELINE_EVALUATION.md)) | 91.7 | 96.1 | 88.2 |
-  | **+ Pose 11m · 현장식 증강 (11/25, 지금 서비스, [5-9](docs/BASELINE_EVALUATION.md))** | **90.0** ¹ | **94.1** | **90.2** |
+  | + Pose 11m · 현장식 증강 (11/25, [5-9](docs/BASELINE_EVALUATION.md)) | 90.0 ¹ | 94.1 | 90.2 |
+  | **+ 카메라 각도 증강 · 움직임 요약 86개 (11/26, 지금 서비스, [결정 22](docs/DESIGN_DECISIONS.md))** | **91.8** ¹ | **92.2** | **90.2** |
 
   ¹ 11/25 부터 4-fold 는 새 구도 5개를 뺀 255개·난수 3개로 다시 잼 (같은 조건의 11/24 모델 89.7). 현장처럼 자르고 반복한 영상은 73.7 → **87.6**
 
